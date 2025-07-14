@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node apps/cli/index.js",
-    "dev:bot": "nodemon apps/bot/index.js"
+    "dev:bot": "nodemon apps/bot/index.js",
+    "dev:ai": "node apps/cli/ai-agent.js"
+
   },
   "keywords": [],
   "author": "",
