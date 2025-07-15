@@ -112,8 +112,20 @@ function startBotServer(bot) {
               const item = bot.inventory.items().find(i => i.name === step.block);
               if (item) {
                 await bot.equip(item, 'hand');
+
+                //get the distance to the block position
+                const distance = bot.entity.position.distanceTo(pos);
+
+                // 👣 Move closer if too far to place
+                if (distance > 3.5) {
+                  await bot.pathfinder.goto(new goals.GoalNear(step.x, step.y, step.z, 2));  
+                }
+
+                // 🧠 Look at the block face before placing
+                await bot.lookAt(pos.offset(0.5, 0.5, 0.5), true);
+
+                // ✅ Place block
                 await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
-                console.log(`✅ Placed ${step.block} at ${pos}`);
               } else {
                 console.warn(`⚠️ Block ${step.block} not in inventory`);
               }
