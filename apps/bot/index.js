@@ -4,6 +4,7 @@ import pkg from 'mineflayer-pathfinder';
 const { pathfinder, Movements, goals } = pkg;
 
 import { startBotServer } from './ws-server.js';
+import { parsePrompt } from '../../packages/prompt-parser/index.js';
 
 import runAgent from '../cli/ai-agent.js';
 
@@ -21,6 +22,13 @@ bot.once('spawn', async () => {
 
   await bot.waitForChunksToLoad(); // ⬅️ ensures blocks are loaded
   await bot.waitForTicks(20);      // ⬅️ slight extra delay just in case
+
+  //give self items needed
+  const neededItems = ['stone', 'oak_planks', 'torch', 'bed'];
+  neededItems.forEach((item, i) => {
+    bot.chat(`/give ${bot.username} minecraft:${item} 999`);
+    bot.waitForTicks(2 + i); // slight stagger
+  });
 
   startBotServer(bot); // ⬅️ Enable WebSocket control
 
@@ -57,4 +65,3 @@ bot.on('chat', (username, message) => {
     runAgent(prompt);
   }
 });
-
