@@ -102,8 +102,8 @@ function startBotServer(bot) {
             const below = pos.offset(0, -1, 0);
             const referenceBlock = bot.blockAt(below);
 
-            if (!referenceBlock) {
-              console.log(`⛔ Skipping ${pos} — no block below`);
+            if (!referenceBlock || referenceBlock.name === 'air') {
+              console.log(`⛔ Skipping ${pos} — invalid reference block (${referenceBlock?.name})`);
               continue;
             }
 
