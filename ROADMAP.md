@@ -1,0 +1,76 @@
+## Phase 0: Foundation & Setup
+- Create project structure and modular layout
+- Set up monorepo or packages: bot, prompt-parser, CLI
+- Install core dependencies: mineflayer, WebSocket, Vec3, etc.
+- Prepare development environment and version control
+
+## Phase 1: Prompt Parsing & Structure Streaming
+- Build CLI tool to accept natural language input (e.g., 'build a cube')
+- Parse prompt into structured block instructions
+- Send instructions via WebSocket to the bot
+- Create basic cube and wall templates to test building
+- Bot places blocks from static build array
+
+## Phase 2: AI Context Awareness & Movement
+- Add mineflayer-pathfinder plugin for bot movement
+- Include bot position, inventory, and nearby blocks in prompt context
+- AI generates both movement and structure instructions
+- Implement moveTo + build in bot
+- Add chat command support: move, follow, stop
+- Parse chat phrases into same instruction format as WebSocket
+- Allow real-time control by players in-game
+
+movement ideas:
+    tell player when arrived at destination
+
+chat ideas:
+    tell bot with @name
+    only allow commands from authorized (or linked) player
+    -by starting the bot and telling it who to listen to (single player only for now)
+
+ai instruction/context
+    access to and use of the "creative" menu
+        accesses every single block in the game
+    break blocks that are in the way
+
+## Phase 3: Web UI or API Gateway
+- Build a web app or REST API to replace CLI
+- Let users submit instructions via browser
+- Web UI communicates via WebSocket or REST to bot
+- Add sandbox limits per build tier (blocks per build, etc.)
+- UI options to toggle chat control, display chat logs
+- Mirror chat commands into UI buttons
+
+## Phase 4: Subscription Tiering & Monetization
+- Create Free, Starter, Pro, and Admin tiers
+- Define limits per tier: build size, command block use, concurrent builds
+- Integrate Stripe for payments
+- Track build history and tier usage
+- Gate chat features per tier (e.g., Pro unlocks structure chat builds)
+
+## Phase 5: Social Integration & Share Rewards
+- Add CurseForge/Modrinth links for user builds
+- Track number of likes/upvotes for rewards
+- Incentivize builds with additional perks (e.g., larger plots, custom blocks)
+- Allow users to share custom chat phrases or AI personalities
+
+## Phase 6: Agent AI Operations Management
+- Create persistent logging for all builds: who, what, when, where
+- Monitor installations and active bot sessions via dashboard
+- Alert on build errors, blocked placements, or suspicious behavior
+- Use analytics to adjust tier limits and popular feature detection
+- Notify admins on crash or build failures
+- Store structured event logs in a database
+- Track and analyze chat usage and abuse patterns
+
+## Phase 7: Pro Tier + Command Block Support
+- Allow command block placement for Pro users
+- Validate incoming structures for illegal block use
+- Apply higher build size limit and access to automation triggers
+- Enable redstone scripting or teleporting via chat commands
+
+Refund & Cancellation Policy
+- Users can cancel anytime from their dashboard
+- Refunds allowed within 7 days of initial purchase or upgrade
+- No refunds for monthly renewals after 7 days
+- Abuse of build system or command blocks may result in suspension
