@@ -18,7 +18,7 @@ export function parsePrompt(prompt) {
   if (lower.includes('floor')) {
     for (let x = 0; x < 3; x++) {
       for (let z = 0; z < 3; z++) {
-        structure.push({ x, y: -1, z, block: 'cobblestone' });
+        structure.push({ x, y: 0, z, block: 'cobblestone' });
       }
     }
     return structure;
@@ -26,7 +26,7 @@ export function parsePrompt(prompt) {
 
   if (lower.includes('pillar')) {
     for (let y = 0; y < 5; y++) {
-      structure.push({ x: 0, y, z: 0, block: 'stone' });
+      structure.push({ x: 0, y, z: 0, block: 'cobblestone' });
     }
     return structure;
   }

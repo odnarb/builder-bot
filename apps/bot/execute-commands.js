@@ -48,6 +48,15 @@ export async function executeCommands(bot, commands, onProgress = () => {}) {
           try {
             await bot.equip(item, 'hand');
 
+            const botPos = bot.entity.position.floored();
+            const isStandingInBlock = pos.x === botPos.x && pos.y === botPos.y && pos.z === botPos.z;
+            if (isStandingInBlock) {
+                const backup = new goals.GoalNear(pos.x, pos.y, pos.z, 2);
+                console.log(`🚶 Moving away from placement target: ${pos}`);
+                onProgress({ type: 'moving_to', reason: 'standing_on_target', ...step });
+                await bot.pathfinder.goto(backup);              
+            }
+
             const distance = bot.entity.position.distanceTo(pos);
             if (distance > 3.5) {
               await bot.pathfinder.goto(new goals.GoalNear(pos.x, pos.y, pos.z, 2));

@@ -34,27 +34,29 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
   if (msg.startsWith('build ')) {
     const prompt = msg.slice(6);
     bot.chat(`📐 Building: ${prompt}`);
+    console.log(`📐 Building: ${prompt}`);
 
     //get the build steps - TODO: Have the AI provide an array of block placements
     // const steps = getAICommand(prompt) // from ai-agent.js
     const steps = parsePrompt(prompt)
 
     // adjust our steps to be relative to the bot's position
-    const adjustedSteps = offsetStructure(steps, {x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z}, { x: 2, y: -1, z: 2 });
+    const adjustedCommands = offsetStructure(steps, {x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z}, { x: 2, y: 0, z: 2 });
 
     //finalize the command set
-    const commands = [
-      { type: 'move_to', x: bot.entity.position.x + 3, y: bot.entity.position.y, z: bot.entity.position.z + 3 },
-      ...adjustedSteps
-    ];
+    // const commands = [
+    //   { type: 'move_to', x: bot.entity.position.x + 3, y: bot.entity.position.y, z: bot.entity.position.z + 3 },
+    //   ...adjustedSteps
+    // ];
+    console.log('command array ', adjustedCommands)
 
-    console.log('command array ', commands)
-
-    await executeCommands(bot, commands, (event) => {
+    await executeCommands(bot, adjustedCommands, (event) => {
         if (event.type === 'block_placed') {
-            bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+            // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+            console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
         } else if (event.type === 'error') {
-            bot.chat(`❌ Failed: ${event.error}`);
+            bot.chat(`❌ Could not perform action`);
+            console.log(`❌ Failed: ${event.error}`);
         }
     });
 
