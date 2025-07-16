@@ -1,9 +1,13 @@
-const WebSocket = require('ws');
-const Vec3 = require('vec3');
-const { goals } = require('mineflayer-pathfinder');
+import { WebSocketServer } from 'ws';
+import Vec3 from 'vec3';
+import pkg from 'mineflayer-pathfinder';
+const { goals } = pkg;
 
-function startBotServer(bot) {
-  const wss = new WebSocket.Server({ port: 3001 });
+import { handlePlayerCommand } from './command-router.js';
+import { executeCommands } from './execute-commands.js';
+
+export function startBotServer(bot) {
+  const wss = new WebSocketServer({ port: 3001 });
 
   wss.on('connection', ws => {
     console.log('📡 Client connected');
@@ -11,6 +15,8 @@ function startBotServer(bot) {
     ws.on('message', async rawData => {
       try {
         const message = JSON.parse(rawData);
+
+        console.log('message: ', message);
 
         // 🛰️ Bot Position Request
         if (message.type === 'get_position') {
@@ -74,8 +80,28 @@ function startBotServer(bot) {
           return;
         }
 
+        if (message.type === 'chat_command') {
+          await handlePlayerCommand(bot, message.message, 'Commander'); // or "WebUI"
+          return;
+        }
+
+        if (message.type === 'raw_prompt') {
+          // You can route this to `ai-agent.js` or parsePrompt()
+          const structure = parsePrompt(message.prompt); // or runAgent()
+
+          if (!structure || !Array.isArray(structure)) {
+            console.warn("❌ Invalid structure from prompt");
+            return;
+          }
+
+          console.log("🧠 Executing structure from prompt:", message.prompt);
+          // Then run the same logic to handle move/build
+        }
+
         // 🧱 Instruction Array (move_to and build)
         const commands = message;
+
+        console.log('commands: ', commands);
 
         if (!Array.isArray(commands) || commands.length === 0) {
           console.warn('⚠️ Received empty or malformed command array');
@@ -84,68 +110,19 @@ function startBotServer(bot) {
 
         console.log('📥 Received command sequence with', commands.length, 'steps');
 
-        for (const step of commands) {
-          if (step.type === 'move_to') {
-            const goal = new goals.GoalBlock(step.x, step.y, step.z);
-            bot.pathfinder.setGoal(goal);
-            ws.send(JSON.stringify({ type: 'moving_to', x: step.x, y: step.y, z: step.z }));
-
-            await new Promise(resolve => {
-              bot.once('goal_reached', () => {
-                ws.send(JSON.stringify({ type: 'goal_reached', x: step.x, y: step.y, z: step.z }));
-                resolve();
-              });
-            });
-
-          } else if (typeof step.block === 'string') {
-            const pos = new Vec3(step.x, step.y, step.z);
-            const below = pos.offset(0, -1, 0);
-            const referenceBlock = bot.blockAt(below);
-
-            if (!referenceBlock || referenceBlock.name === 'air') {
-              console.log(`⛔ Skipping ${pos} — invalid reference block (${referenceBlock?.name})`);
-              continue;
-            }
-
-            try {
-              // Make sure bot equips the block before placing
-              const item = bot.inventory.items().find(i => i.name === step.block);
-              if (item) {
-                await bot.equip(item, 'hand');
-
-                //get the distance to the block position
-                const distance = bot.entity.position.distanceTo(pos);
-
-                // 👣 Move closer if too far to place
-                if (distance > 3.5) {
-                  await bot.pathfinder.goto(new goals.GoalNear(step.x, step.y, step.z, 2));  
-                }
-
-                // 🧠 Look at the block face before placing
-                await bot.lookAt(pos.offset(0.5, 0.5, 0.5), true);
-
-                // ✅ Place block
-                await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
-              } else {
-                console.warn(`⚠️ Block ${step.block} not in inventory`);
-              }
-
-              console.log(`✅ Placed ${step.block} at ${pos}`);
-            } catch (err) {
-              console.log(`⚠️ Error placing block at ${pos}: ${err.message}`);
-            }
-          } else {
-            console.warn('⚠️ Unknown instruction:', step);
-          }
+        // 🧱 Instruction Array
+        if (Array.isArray(message)) {
+          console.log('📥 Received command sequence:', message);
+          await executeCommands(bot, message, (event) => {
+            ws.send(JSON.stringify(event));
+          });
+          return;
         }
-
       } catch (err) {
-        console.error('❌ Error parsing message:', err.message);
+        console.error('❌ Error parsing message:', err.stack);
       }
     });
   });
 
   console.log('🛰️ Bot WebSocket server running on ws://localhost:3001');
 }
-
-module.exports = { startBotServer };

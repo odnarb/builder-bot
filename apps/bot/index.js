@@ -4,9 +4,8 @@ import pkg from 'mineflayer-pathfinder';
 const { pathfinder, Movements, goals } = pkg;
 
 import { startBotServer } from './ws-server.js';
-import { parsePrompt } from '../../packages/prompt-parser/index.js';
 
-import runAgent from '../cli/ai-agent.js';
+import { handlePlayerCommand } from './command-router.js';
 
 const bot = mineflayer.createBot({
   host: '127.0.0.1',
@@ -35,33 +34,7 @@ bot.once('spawn', async () => {
   const base = bot.entity.position.offset(1, 0, 1);
 });
 
-bot.on('chat', (username, message) => {
+bot.on('chat', async (username, message) => {
   if (username === bot.username) return;
-
-  const msg = message.toLowerCase();
-
-  if (msg === 'come here') {
-    const player = bot.players[username]?.entity;
-    if (player) {
-      const goal = new goals.GoalBlock(
-        Math.floor(player.position.x),
-        Math.floor(player.position.y),
-        Math.floor(player.position.z)
-      );
-      bot.pathfinder.setGoal(goal);
-      bot.chat("On my way!");
-    }
-  }
-
-  if (msg === 'stop') {
-    bot.pathfinder.setGoal(null);
-    bot.chat("Okay, stopped.");
-  }
-
-  if (msg.startsWith('build ')) {
-    const prompt = message.slice(6);
-    bot.chat(`📐 Building: ${prompt}`);
-
-    runAgent(prompt);
-  }
+  await handlePlayerCommand(bot, message, username);
 });

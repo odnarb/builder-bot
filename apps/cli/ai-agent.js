@@ -2,6 +2,7 @@
 import 'dotenv/config.js';
 import { OpenAI } from 'openai';
 import WebSocket from 'ws';
+import { offsetStructure } from '../shared-utils/offsetStructure.js';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -85,16 +86,6 @@ async function getAICommand() {
   });
 
   return chat.choices[0].message.content.trim();
-}
-
-// ↔️ Offset structure based on bot position
-function offsetStructure(structure, botPos, offset = { x: 2, y: 0, z: 2 }) {
-  return structure.map(block => ({
-    x: block.x + botPos.x + offset.x,
-    y: block.y + botPos.y + offset.y,
-    z: block.z + botPos.z + offset.z,
-    block: block.block
-  }));
 }
 
 // 📤 Send to bot

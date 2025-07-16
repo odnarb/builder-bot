@@ -1,5 +1,5 @@
 // packages/prompt-parser/index.js
-function parsePrompt(prompt) {
+export function parsePrompt(prompt) {
   const structure = [];
 
   const lower = prompt.toLowerCase();
@@ -33,5 +33,3 @@ function parsePrompt(prompt) {
 
   return [];
 }
-
-module.exports = { parsePrompt };
