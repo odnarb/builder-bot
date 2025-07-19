@@ -62,8 +62,25 @@ Refund & Cancellation Policy
 - No refunds for monthly renewals after 7 days
 - Abuse of build system or command blocks may result in suspension
 
+## Ideas that might be critical but not sure if included in roadmap
+
+build a server that logs to sqlite for local development for now (will swap with GCP Firestore later, make sure we are not locked into sqlite)
+server connects to auth0 for logins and signups
+log errors and successes to server via bot
+server handles stripe payment processing
+
 
 ## Extra Ideas Not on Roadmap
+
+
+build structure limits
+    needs to have build structure limit in bot before executing
+        keep a local cache of what user's restrictions are and where they're at
+
+build structure log/history
+    send builds completed to server backend
+    do not count errored blocks against quota
+    do count error blocks and the build it occurred with
 
 bot inventory:
     allow bot to give self blocks when not in inventory and retry build

@@ -64,7 +64,7 @@ function getNearbyBlocks() {
 }
 
 // 🧠 Ask ChatGPT for block structure
-async function getAICommand() {
+export async function getStructureFromAI(message) {
   const chat = await openai.chat.completions.create({
     model: 'gpt-4',
     messages: [
@@ -76,11 +76,13 @@ async function getAICommand() {
             { "x": 0, "y": 0, "z": 0, "block": "cobblestone" },
             { "x": 0, "y": 1, "z": 0, "block": "cobblestone" }
           ]
-          All positions must be relative to origin (0,0,0). Do NOT include quotes, explanations, or markdown.`,
+          All positions must be relative to origin (0,0,0). Do NOT include quotes, explanations, or markdown.
+          Keep it appropriate for all audiences which includes young children.
+          If nothing can be built from the request, respond with an empty array like: []`,
       },
       {
         role: 'user',
-        content: 'Build a 10x10 house with, torches, a door, and a bed inside.',
+        content: message,
       },
     ],
   });
@@ -134,7 +136,7 @@ async function main() {
   }
 }
 
-export default async function runAgent(prompt = 'build a 3x3 stone floor') {
+async function runAgent(prompt = 'build a 3x3 stone floor') {
   try {
     const [botPos, inventory, nearbyBlocks] = await Promise.all([
       getBotPosition(),

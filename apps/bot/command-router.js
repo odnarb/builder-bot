@@ -5,6 +5,7 @@ import Vec3 from 'vec3';
 import { parsePrompt } from '../../packages/prompt-parser/index.js';
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
+import { getStructureFromAI } from '../cli/ai-agent.js';
 
 export async function handlePlayerCommand(bot, message, username = 'Commander') {
   console.log(`⚙️ Executing: ${message} from ${username}`);
@@ -36,29 +37,43 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
     bot.chat(`📐 Building: ${prompt}`);
     console.log(`📐 Building: ${prompt}`);
 
-    //get the build steps - TODO: Have the AI provide an array of block placements
-    // const steps = getAICommand(prompt) // from ai-agent.js
-    const steps = parsePrompt(prompt)
+    let steps = []
 
-    // adjust our steps to be relative to the bot's position
-    const adjustedCommands = offsetStructure(steps, {x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z}, { x: 2, y: 0, z: 2 });
+    //first try parsing to ste steps
+    steps = parsePrompt(prompt)
 
-    //finalize the command set
-    // const commands = [
-    //   { type: 'move_to', x: bot.entity.position.x + 3, y: bot.entity.position.y, z: bot.entity.position.z + 3 },
-    //   ...adjustedSteps
-    // ];
-    console.log('command array ', adjustedCommands)
+    // console.log('structure parsePrompt: ', steps)
 
-    await executeCommands(bot, adjustedCommands, (event) => {
-        if (event.type === 'block_placed') {
-            // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-            console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-        } else if (event.type === 'error') {
-            bot.chat(`❌ Could not perform action`);
-            console.log(`❌ Failed: ${event.error}`);
-        }
-    });
+    if(steps.length === 0) {
+      //get the build steps from the AI
+      steps = await getStructureFromAI(prompt) // from ai-agent.js
+      // console.log('structure from AI: ', steps)
+    }
+
+    if(steps.length > 0) {
+      // adjust our steps to be relative to the bot's position
+      const adjustedCommands = offsetStructure(steps, {x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z}, { x: 2, y: 0, z: 2 });
+
+      //sort commands by height -- disallow floating blocks
+      adjustedCommands.sort((a, b) => a.y - b.y);
+
+      //clear the inventory first before a build
+      await bot.creative.clearInventory()
+
+      //finalize the command set
+      await executeCommands(bot, adjustedCommands, (event) => {
+          if (event.type === 'block_placed') {
+              // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+              console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+          } else if (event.type === 'error') {
+              bot.chat(`❌ Could not perform action`);
+              console.log(`❌ Failed: ${event.error}`);
+          }
+      });
+    } else {
+      bot.chat(`❌ No structure received from AI`)
+      console.log(`❌ No structure received from AI`)
+    }
 
     return;
   }

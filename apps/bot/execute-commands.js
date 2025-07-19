@@ -23,12 +23,32 @@ export async function executeCommands(bot, commands, onProgress = () => {}) {
       const pos = new Vec3(step.x, step.y, step.z);
       const item = bot.inventory.items().find(i => i.name === step.block);
 
+      //get the item
       if (!item) {
-        console.warn(`⚠️ Block ${step.block} not in inventory`);
-        onProgress({ type: 'error', error: 'Missing block in inventory', ...step });
-        continue;
-      }
+        console.log(`📦 Missing ${step.block}, attempting to give...`);
+        try {
+          if (bot.creative && bot.creative.give) {
+            await bot.creative.give(bot.registry.itemsByName[step.block].id, 64);
+            item = bot.inventory.items().find(i => i.name === step.block);
+            console.log(`✅ Gave 64 of ${step.block}`);
+          } else {
+            bot.chat(`/give ${bot.username} minecraft:${step.block} 64`);
 
+            let retries = 0;
+            while (!item && retries < 3) {
+              await bot.waitForTicks(20);
+              item = bot.inventory.items().find(i => i.name === step.block);
+              retries++;
+            }
+            console.log(`✅ Requested ${step.block} via /give`);
+          }
+        } catch (giveErr) {
+          console.warn(`❌ Failed to give ${step.block}: ${giveErr.message}`);
+          onProgress({ type: 'error', error: 'Failed to give block', ...step });
+          continue;
+        }
+      }
+      
       const adjacentOffsets = [
         new Vec3(0, -1, 0),
         new Vec3(1, 0, 0),
