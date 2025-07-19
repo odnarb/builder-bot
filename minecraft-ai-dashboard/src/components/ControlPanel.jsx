@@ -6,15 +6,6 @@ const predefinedBuild = "build a cube";
 export default function ControlPanel() {
   const { sendMessage } = useContext(WebSocketContext);
 
-  const handleSendBuild = () => {
-    sendMessage([
-      { type: "move_to", x: 10, y: 70, z: 10 },
-      { block: "cobblestone", x: 10, y: 70, z: 10 },
-      { block: "cobblestone", x: 11, y: 70, z: 10 },
-      { block: "cobblestone", x: 12, y: 70, z: 10 }
-    ]);
-  };
-
   return (
     <div className="space-x-2 mt-4">
       <button
@@ -25,10 +16,10 @@ export default function ControlPanel() {
       </button>
 
       <button
-        onClick={handleSendBuild}
+        onClick={() => sendMessage({ type: 'chat_command', message: "build cube" })}
         className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
       >
-        Build Test
+        Build Cube
       </button>
 
       <button
