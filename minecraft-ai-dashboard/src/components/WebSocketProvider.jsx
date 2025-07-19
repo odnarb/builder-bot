@@ -1,68 +1,82 @@
-import React, { createContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useEffect, useRef, useState } from 'react';
 
-const RETRY_LIMIT = 100
+const RETRY_LIMIT = 100;
 
-export const WebSocketContext = createContext({ messages: [], sendMessage: () => {} });
+export const WebSocketContext = createContext({
+  messages: [],
+  sendMessage: () => {},
+});
 
 export default function WebSocketProvider({ children }) {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
   const reconnectAttempts = useRef(0);
-
+  const shouldReconnect = useRef(true);
   const [messages, setMessages] = useState([]);
 
-  const connectWebSocket = function () {
-    const socket = new WebSocket("ws://localhost:3001");
+  const connectWebSocket = () => {
+    const socket = new WebSocket('ws://localhost:3001');
     socketRef.current = socket;
 
     socket.onopen = () => {
+      console.log('✅ WebSocket connected');
       setIsConnected(true);
-      reconnectAttempts.current = 0; // Reset attempts on successful connection
-      console.log("✅ WebSocket connected");
+      reconnectAttempts.current = 0;
     };
 
     socket.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        console.log("📨 WS message:", msg);
+        console.log('📨 WS message:', msg);
         setMessages(prev => [...prev, msg]);
       } catch (err) {
-        console.warn("⚠️ Invalid WS data:", event.data);
+        console.warn('⚠️ Invalid WS data:', event.data);
       }
     };
 
     socket.onerror = (err) => {
-      console.error("❌ WebSocket error:", err);
+      console.error('❌ WebSocket error:', err);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       setIsConnected(false);
-      console.warn("🔌 WebSocket disconnected. Attempting to reconnect...");
-      if (reconnectAttempts.current < RETRY_LIMIT) { // Limit retry attempts
+      console.warn('🔌 WebSocket disconnected.');
+
+      // ⛔ Only reconnect if still allowed and socket is current
+      if (
+        shouldReconnect.current &&
+        socket === socketRef.current &&
+        reconnectAttempts.current < RETRY_LIMIT
+      ) {
         reconnectAttempts.current++;
-        setTimeout(connectWebSocket, 1000 * reconnectAttempts.current); // Exponential backoff
-      } else {
-        console.error('❌ Max reconnection attempts reached... Refresh the page');
-        alert(`Connection to BuilderBot disrupted and retry limit reached, please try reloading the page.`)
+        const delay = 1000 * reconnectAttempts.current;
+        console.log(`🔁 Reconnecting in ${delay / 1000}s...`);
+        setTimeout(connectWebSocket, delay);
+      } else if (reconnectAttempts.current >= RETRY_LIMIT) {
+        console.error('❌ Max reconnection attempts reached.');
+        alert('Connection to BuilderBot lost. Please reload the page.');
       }
     };
+  };
 
-    return () => socket.close();
-  }
-  
   useEffect(() => {
+    shouldReconnect.current = true;
     connectWebSocket();
 
     return () => {
+      shouldReconnect.current = false;
       if (socketRef.current) {
         socketRef.current.close();
+        socketRef.current = null;
       }
     };
   }, []);
 
-
   const sendMessage = (data) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+    if (
+      socketRef.current &&
+      socketRef.current.readyState === WebSocket.OPEN
+    ) {
       socketRef.current.send(JSON.stringify(data));
     }
   };
