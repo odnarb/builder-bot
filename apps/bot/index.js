@@ -7,6 +7,9 @@ import { startBotServer } from './ws-server.js';
 
 import { handlePlayerCommand } from './command-router.js';
 
+//master player
+const commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
+
 const bot = mineflayer.createBot({
   host: '127.0.0.1',
   port: 25565,
@@ -36,5 +39,14 @@ bot.once('spawn', async () => {
 
 bot.on('chat', async (username, message) => {
   if (username === bot.username) return;
+
+  const player = Object.entries(bot.players).filter(([username, user]) => user.uuid === commanderUUID)[0]
+
+  // don't allow commands from other players
+  if(player === undefined) {
+    console.log('ignoring chat from unauthorized entity')
+    return
+  }
+
   await handlePlayerCommand(bot, message, username);
 });

@@ -6,6 +6,8 @@ const { goals } = pkg;
 import { handlePlayerCommand } from './command-router.js';
 import { executeCommands } from './execute-commands.js';
 
+let commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
+
 export function startBotServer(bot) {
   const wss = new WebSocketServer({ port: 3001 });
 
@@ -17,6 +19,20 @@ export function startBotServer(bot) {
         const message = JSON.parse(rawData);
 
         console.log('message: ', message);
+
+        //Update who the commander is in the game (player's UUID)
+        if(message.type === 'commander_change') {
+          const player = bot.players[message.message];
+
+          //don't switch commanders if it is not found
+          if(player === undefined) {
+            // can't update, player not on server
+            ws.send(JSON.stringify({ type: 'commander_change_error', text: `Commander could not be updated to player with UUID: ${message.message}` }));
+          } else {
+            commanderUUID = message.message
+            ws.send(JSON.stringify({ type: 'commander_changed', text: `Commander updated to player ${player.username} (uuid: ${player.uuid})` }));
+          }
+        }
 
         // 🛰️ Bot Position Request
         if (message.type === 'get_position') {
@@ -128,18 +144,25 @@ export function startBotServer(bot) {
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {
-    const payload = {
-      type: 'chat_feed',
-      from: username,
-      text: message,
-      timestamp: Date.now()
-    };
+    const messageIsFromCommander = bot.players[username].uuid === commanderUUID;
+    const messageIsFromBot = bot.entity.username === bot.players[username].username;
 
-    for (const client of wss.clients) {
-      if (client.readyState === client.OPEN) {
-        client.send(JSON.stringify(payload));
+    if(messageIsFromCommander || messageIsFromBot) {
+      const payload = {
+        type: 'chat_feed',
+        from: username,
+        text: message,
+        timestamp: Date.now()
+      };
+
+      for (const client of wss.clients) {
+        if (client.readyState === client.OPEN) {
+          client.send(JSON.stringify(payload));
+        }
       }
+        
     }
+      
   });
 }
 
