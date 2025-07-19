@@ -125,4 +125,21 @@ export function startBotServer(bot) {
   });
 
   console.log('🛰️ Bot WebSocket server running on ws://localhost:3001');
+
+  // 💬 Broadcast in-game chat to all WebSocket clients
+  bot.on('chat', (username, message) => {
+    const payload = {
+      type: 'chat_feed',
+      from: username,
+      text: message,
+      timestamp: Date.now()
+    };
+
+    for (const client of wss.clients) {
+      if (client.readyState === client.OPEN) {
+        client.send(JSON.stringify(payload));
+      }
+    }
+  });
 }
+

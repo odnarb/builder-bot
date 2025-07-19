@@ -20,19 +20,6 @@
 - Parse chat phrases into same instruction format as WebSocket
 - Allow real-time control by players in-game
 
-movement ideas:
-    tell player when arrived at destination
-
-chat ideas:
-    tell bot with @name
-    only allow commands from authorized (or linked) player
-    -by starting the bot and telling it who to listen to (single player only for now)
-
-ai instruction/context
-    access to and use of the "creative" menu
-        accesses every single block in the game
-    break blocks that are in the way
-
 ## Phase 3: Web UI or API Gateway
 - Build a web app or REST API to replace CLI
 - Let users submit instructions via browser
@@ -74,3 +61,30 @@ Refund & Cancellation Policy
 - Refunds allowed within 7 days of initial purchase or upgrade
 - No refunds for monthly renewals after 7 days
 - Abuse of build system or command blocks may result in suspension
+
+
+## Extra Ideas Not on Roadmap
+
+bot inventory:
+    allow bot to give self blocks when not in inventory and retry build
+
+code obfuscation:
+    wrap with electron (possibly deploy to macOS as well with this)
+
+system architecture:
+    GCP function for updating app on startup
+    GCP function with auth0 for SSO/login
+    GCP function for license check on login
+    GCP container (or function) for AI command parser
+    GCP Firestore for db
+    GCP ? for logging user actions
+
+chat ideas:
+    only allow commands from authorized (or linked) player
+    -by starting the bot and telling it who to listen to (single player only for now)
+
+
+ai instruction/context
+    access to and use of the "creative" menu
+        accesses every single block in the game
+    break blocks that are in the way

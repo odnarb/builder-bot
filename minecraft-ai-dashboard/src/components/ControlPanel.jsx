@@ -9,9 +9,9 @@ export default function ControlPanel() {
   const handleSendBuild = () => {
     sendMessage([
       { type: "move_to", x: 10, y: 70, z: 10 },
-      { block: "stone", x: 10, y: 70, z: 10 },
-      { block: "stone", x: 11, y: 70, z: 10 },
-      { block: "stone", x: 12, y: 70, z: 10 }
+      { block: "cobblestone", x: 10, y: 70, z: 10 },
+      { block: "cobblestone", x: 11, y: 70, z: 10 },
+      { block: "cobblestone", x: 12, y: 70, z: 10 }
     ]);
   };
 
