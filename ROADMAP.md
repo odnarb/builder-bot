@@ -82,7 +82,8 @@ system architecture:
 chat ideas:
     only allow commands from authorized (or linked) player
     -by starting the bot and telling it who to listen to (single player only for now)
-
+    -allow uuid to be updated from web ui
+    -make sure it follows commands only from the commander that has a valid uuid
 
 ai instruction/context
     access to and use of the "creative" menu
