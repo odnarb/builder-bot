@@ -5,7 +5,7 @@ const { goals } = pkg;
 /**
  * Executes an array of bot instructions (move_to, place block, etc.)
  */
-export async function executeCommands(bot, commands, onProgress = () => {}) {
+export async function executeCommands(bot, commands, onProgress = () => { }) {
   for (const step of commands) {
     if (step.type === 'move_to') {
       const goal = new goals.GoalBlock(step.x, step.y, step.z);
@@ -48,7 +48,7 @@ export async function executeCommands(bot, commands, onProgress = () => {}) {
           continue;
         }
       }
-      
+
       const adjacentOffsets = [
         new Vec3(0, -1, 0),
         new Vec3(1, 0, 0),
@@ -71,10 +71,10 @@ export async function executeCommands(bot, commands, onProgress = () => {}) {
             const botPos = bot.entity.position.floored();
             const isStandingInBlock = pos.x === botPos.x && pos.y === botPos.y && pos.z === botPos.z;
             if (isStandingInBlock) {
-                const backup = new goals.GoalNear(pos.x, pos.y, pos.z, 2);
-                console.log(`🚶 Moving away from placement target: ${pos}`);
-                onProgress({ type: 'moving_to', reason: 'standing_on_target', ...step });
-                await bot.pathfinder.goto(backup);              
+              const backup = new goals.GoalNear(pos.x, pos.y, pos.z, 2);
+              console.log(`🚶 Moving away from placement target: ${pos}`);
+              onProgress({ type: 'moving_to', reason: 'standing_on_target', ...step });
+              await bot.pathfinder.goto(backup);
             }
 
             const distance = bot.entity.position.distanceTo(pos);
