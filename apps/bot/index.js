@@ -29,11 +29,11 @@ bot.once('spawn', async () => {
   await bot.waitForTicks(20);      // ⬅️ slight extra delay just in case
 
   //give self items needed
-  const neededItems = ['stone', 'oak_planks', 'torch', 'bed'];
-  neededItems.forEach((item, i) => {
-    bot.chat(`/give ${bot.username} minecraft:${item} 999`);
-    bot.waitForTicks(2 + i); // slight stagger
-  });
+  // const neededItems = ['stone', 'oak_planks', 'torch', 'bed'];
+  // neededItems.forEach((item, i) => {
+  //   bot.chat(`/give ${bot.username} minecraft:${item} 999`);
+  //   bot.waitForTicks(2 + i); // slight stagger
+  // });
 
   startBotServer(bot); // ⬅️ Enable WebSocket control
 
@@ -42,8 +42,6 @@ bot.once('spawn', async () => {
 
 bot.on('chat', async (username, message) => {
   try {
-    console.log(`Got "${message}" from ${username}`)
-
     //Ignore chat from self.
     if (username === bot.username) {
       return;
