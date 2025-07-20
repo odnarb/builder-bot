@@ -42,37 +42,9 @@ export function parsePrompt(prompt) {
     return structure;
   }
 
-  if (lower.includes('large house')) {
-    return [
-      { "x": 0, "y": 0, "z": 0, "block": "cobblestone" },
-      { "x": 1, "y": 0, "z": 0, "block": "cobblestone" },
-      { "x": -1, "y": 0, "z": 0, "block": "cobblestone" },
-      { "x": 0, "y": 0, "z": 1, "block": "cobblestone" },
-      { "x": 0, "y": 0, "z": -1, "block": "cobblestone" },
-      { "x": 1, "y": 0, "z": 1, "block": "cobblestone" },
-      { "x": -1, "y": 0, "z": -1, "block": "cobblestone" },
-      { "x": -1, "y": 0, "z": 1, "block": "cobblestone" },
-      { "x": 1, "y": 0, "z": -1, "block": "cobblestone" },
-      { "x": 0, "y": 1, "z": 0, "block": "cobblestone" },
-      { "x": 0, "y": 2, "z": 0, "block": "cobblestone" },
-      { "x": 0, "y": 1, "z": 1, "block": "cobblestone" },
-      { "x": 0, "y": 1, "z": -1, "block": "cobblestone" },
-      { "x": 1, "y": 1, "z": 0, "block": "cobblestone" },
-      { "x": -1, "y": 1, "z": 0, "block": "cobblestone" },
-      { "x": 0, "y": 1, "z": 0, "block": "oak_door" },
-      { "x": 0, "y": 2, "z": 0, "block": "glass_pane" },
-      { "x": 1, "y": 2, "z": 0, "block": "glass_pane" },
-      { "x": -1, "y": 2, "z": 0, "block": "glass_pane" },
-      { "x": 0, "y": 1, "z": 1, "block": "torch" },
-      { "x": 0, "y": 1, "z": -1, "block": "torch" },
-      { "x": 1, "y": 1, "z": 0, "block": "torch" },
-      { "x": -1, "y": 1, "z": 0, "block": "torch" },
-      { "x": 0, "y": 0, "z": 0, "block": "chest" },
-      { "x": 0, "y": 0, "z": 1, "block": "bed" },
-      { "x": 0, "y": 0, "z": -1, "block": "bed" },
-      { "x": 1, "y": 0, "z": 0, "block": "bed" },
-      { "x": -1, "y": 0, "z": 0, "block": "bed" }
-    ]
+  if (lower.includes('medium house')) {
+    const mediumHosueRaw = fs.readFileSync('./medium-house-template.json')
+    return JSON.parse(mediumHosueRaw)
   }
 
   if (lower.includes('house')) {
