@@ -1,7 +1,6 @@
-import Vec3 from 'vec3';
 import mineflayer from 'mineflayer';
 import pkg from 'mineflayer-pathfinder';
-const { pathfinder, Movements, goals } = pkg;
+const { pathfinder } = pkg;
 
 import { startBotServer } from './ws-server.js';
 
