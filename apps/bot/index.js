@@ -44,15 +44,13 @@ bot.on('chat', async (username, message) => {
   try {
     console.log(`Got "${message}" from ${username}`)
 
-    // this shouldn't ever happen, but just in case the AI starts chatting with users
+    //Ignore chat from self.
     if (username === bot.username) {
-      console.log(`Ignoring chat from self.`)
       return;
     }
 
-    // only respond to commands with format like: "@BuilderBot build a fortress"
+    // Only respond to commands with format like: "@BuilderBot build a fortress"
     if (!message.includes(`@${botName}`)) {
-      console.log(`Ignoring chat without @${botName}.`)
       return;
     }
 
