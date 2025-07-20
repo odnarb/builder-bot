@@ -1,7 +1,6 @@
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
-import Vec3 from 'vec3';
 import { parsePrompt } from '../../packages/prompt-parser/index.js';
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
@@ -63,20 +62,26 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
     //first try parsing to ste steps
     steps = parsePrompt(prompt)
 
-    // console.log('structure parsePrompt: ', steps)
-
     if (steps.length === 0) {
       //get the build steps from the AI
-      steps = await getStructureFromAI(prompt) // from ai-agent.js
-      // console.log('structure from AI: ', steps)
+      const rawSteps = await getStructureFromAI(prompt) // from ai-agent.js
+
+      try {
+        steps = JSON.parse(rawSteps)
+        fs.writeFileSync(`ai-build-structures.log`, JSON.stringify(steps))
+      } catch (error) {
+        steps = []
+        console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
+      }
     }
 
     if (steps.length > 0) {
       // adjust our steps to be relative to the bot's position
       const adjustedCommands = offsetStructure(steps, { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, { x: 2, y: 0, z: 2 });
 
+      //disable, the AI should be doing this
       //sort commands by height -- disallow floating blocks
-      adjustedCommands.sort((a, b) => a.y - b.y);
+      // adjustedCommands.sort((a, b) => a.y - b.y);
 
       //clear the inventory first before a build
       await bot.creative.clearInventory()
