@@ -84,10 +84,12 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
       //finalize the command set
       await executeCommands(bot, adjustedCommands, (event) => {
         if (event.type === 'block_placed') {
+          // don't spam the server
           // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
           console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
         } else if (event.type === 'error') {
-          bot.chat(`❌ Could not perform action`);
+          // don't spam the server
+          // bot.chat(`❌ Could not place block. ${event.error}`);
           console.log(`❌ Failed: ${event.error}`);
         }
       });
