@@ -2,9 +2,6 @@ import Vec3 from 'vec3';
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
-/**
- * Executes an array of bot instructions (move_to, place block, etc.)
- */
 export async function executeCommands(bot, commands, onProgress = () => { }) {
   for (const step of commands) {
     if (step.type === 'move_to') {
@@ -23,17 +20,16 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
       const pos = new Vec3(step.x, step.y, step.z);
       let item = bot.inventory.items().find(i => i.name === step.block);
 
-      //get the item
+      // Give item if missing
       if (!item) {
         console.log(`📦 Missing ${step.block}, attempting to give...`);
         try {
-          if (bot.creative && bot.creative.give) {
-            await bot.creative.give(bot.registry.itemsByName[step.block].id, 64);
+          if (bot.creative?.give) {
+            await bot.creative.give(bot.registry.itemsByName[step.block].id, 999);
             item = bot.inventory.items().find(i => i.name === step.block);
             console.log(`✅ Gave 64 of ${step.block}`);
           } else {
-            bot.chat(`/give ${bot.username} minecraft:${step.block} 64`);
-
+            bot.chat(`/give ${bot.username} minecraft:${step.block} 999`);
             let retries = 0;
             while (!item && retries < 3) {
               await bot.waitForTicks(20);
@@ -49,6 +45,27 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
         }
       }
 
+      // 🧱 Try to lay foundation if block below is air
+      const below = bot.blockAt(pos.offset(0, -1, 0));
+      if (!below || below.name === 'air') {
+        const foundationItem = bot.inventory.items().find(i => i.name === 'cobblestone');
+        if (!foundationItem) {
+          bot.chat(`/give ${bot.username} minecraft:cobblestone 999`);
+          await bot.waitForTicks(20);
+        }
+        const ref = bot.blockAt(pos.offset(1, -1, 0)) || bot.blockAt(pos.offset(0, -1, 1));
+        if (ref && ref.name !== 'air') {
+          try {
+            await bot.equip(bot.inventory.items().find(i => i.name === 'cobblestone'), 'hand');
+            await bot.placeBlock(ref, new Vec3(0, 1, 0));
+            console.log(`🧱 Foundation placed at ${pos.offset(0, -1, 0)}`);
+          } catch (err) {
+            console.warn(`⚠️ Failed to place foundation: ${err.message}`);
+          }
+        }
+      }
+
+      // Attempt to place the actual block
       const adjacentOffsets = [
         new Vec3(0, -1, 0),
         new Vec3(1, 0, 0),
@@ -99,12 +116,10 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
           }
 
           await bot.placeBlock(refBlock, offset.scaled(-1));
-
           console.log(`✅ Placed ${step.block} at ${pos}`);
           onProgress({ type: 'block_placed', block: step.block, ...step });
           placed = true;
           break;
-
         } catch (err) {
           console.warn(`⚠️ Failed to place at ${pos} using face ${offset}: ${err.message}`);
         }
@@ -119,6 +134,6 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
     }
   } //end comands set
 
-  bot.chat(`📐 Build complete!`)
-  console.log(`📐 Build complete!`)
+  bot.chat(`📐 Build complete!`);
+  console.log(`📐 Build complete!`);
 }

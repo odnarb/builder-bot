@@ -6,6 +6,8 @@ import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
 import { getStructureFromAI } from '../cli/ai-agent.js';
 
+import fs from 'fs'
+
 export async function handlePlayerCommand(bot, message, username = 'Commander') {
   console.log(`⚙️ Executing: ${message} from ${username}`);
 
@@ -68,7 +70,8 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
 
       try {
         steps = JSON.parse(rawSteps)
-        fs.writeFileSync(`ai-build-structures.log`, JSON.stringify(steps))
+
+        // fs.writeFileSync(`ai-build-structures.log`, JSON.stringify(steps))
       } catch (error) {
         steps = []
         console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)

@@ -1,4 +1,7 @@
 // packages/prompt-parser/index.js
+
+import fs from 'fs'
+
 export function parsePrompt(prompt) {
   let structure = [];
 
@@ -43,7 +46,7 @@ export function parsePrompt(prompt) {
   }
 
   if (lower.includes('medium house')) {
-    const mediumHosueRaw = fs.readFileSync('./medium-house-template.json')
+    const mediumHosueRaw = fs.readFileSync('./packages/prompt-parser/medium-house-template.json')
     return JSON.parse(mediumHosueRaw)
   }
 
