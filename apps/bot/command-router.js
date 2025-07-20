@@ -12,16 +12,37 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
 
   const msg = message.toLowerCase();
 
-  if (msg === 'come here') {
-    const player = bot.players[username]?.entity;
-    if (player) {
+  if (msg.includes('come here')) {
+    const playerEntity = bot.players[username]?.entity;
+
+    //if a close entity found go there else try to check for coordinates in the message
+    if (playerEntity) {
       const goal = new goals.GoalBlock(
-        Math.floor(player.position.x),
-        Math.floor(player.position.y),
-        Math.floor(player.position.z)
+        Math.floor(playerEntity.position.x),
+        Math.floor(playerEntity.position.y),
+        Math.floor(playerEntity.position.z)
       );
       bot.pathfinder.setGoal(goal);
       bot.chat("On my way!");
+    } else {
+      // Match "come here x:0,y:0,z:0" using regex
+      const coordMatch = message.match(/x\s*:\s*(-?\d+)\s*,\s*y\s*:\s*(-?\d+)\s*,\s*z\s*:\s*(-?\d+)/i);
+
+      if (coordMatch) {
+        const [, x, y, z] = coordMatch.map(Number);
+
+        if ([x, y, z].every(v => !isNaN(v))) {
+          console.log(`🧭 ${username} requested bot to travel to: (${x}, ${y}, ${z})`);
+
+          const goal = new goals.GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
+          bot.pathfinder.setGoal(goal);
+          bot.chat("On my way! This might take a while...");
+        } else {
+          bot.chat(`⚠️ Invalid coordinates given.`);
+        }
+      } else {
+        bot.chat("Looks like you're too far away or I couldn't understand those coordinates. You need to use F3 to find your coordinates and tell me where to go. Like this: @Bot come here x:0,y:0,z:0");
+      }
     }
     return;
   }
@@ -44,15 +65,15 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
 
     // console.log('structure parsePrompt: ', steps)
 
-    if(steps.length === 0) {
+    if (steps.length === 0) {
       //get the build steps from the AI
       steps = await getStructureFromAI(prompt) // from ai-agent.js
       // console.log('structure from AI: ', steps)
     }
 
-    if(steps.length > 0) {
+    if (steps.length > 0) {
       // adjust our steps to be relative to the bot's position
-      const adjustedCommands = offsetStructure(steps, {x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z}, { x: 2, y: 0, z: 2 });
+      const adjustedCommands = offsetStructure(steps, { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, { x: 2, y: 0, z: 2 });
 
       //sort commands by height -- disallow floating blocks
       adjustedCommands.sort((a, b) => a.y - b.y);
@@ -62,13 +83,13 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
 
       //finalize the command set
       await executeCommands(bot, adjustedCommands, (event) => {
-          if (event.type === 'block_placed') {
-              // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-              console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-          } else if (event.type === 'error') {
-              bot.chat(`❌ Could not perform action`);
-              console.log(`❌ Failed: ${event.error}`);
-          }
+        if (event.type === 'block_placed') {
+          // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+          console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
+        } else if (event.type === 'error') {
+          bot.chat(`❌ Could not perform action`);
+          console.log(`❌ Failed: ${event.error}`);
+        }
       });
     } else {
       bot.chat(`❌ No structure received from AI`)
