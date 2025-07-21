@@ -1,4 +1,4 @@
-name: stripe-api
+name: api
 entryPoint: app
 runtime: nodejs22
 trigger: http
