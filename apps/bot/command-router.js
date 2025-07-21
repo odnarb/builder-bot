@@ -8,7 +8,29 @@ import { getStructureFromAI } from '../cli/ai-agent.js';
 
 import fs from 'fs'
 
-export async function handlePlayerCommand(bot, message, username = 'Commander') {
+const USAGE_TIER_NAMES = {
+  FREE: 'free',
+  STARTER: 'starter',
+  PRO: 'pro',
+  ADMIN: 'admin'
+};
+
+const USAGE_TIERS = {
+  FREE: { maxBlocks: 100, allowCustomChat: false },
+  STARTER: { maxBlocks: 500 },
+  PRO: { maxBlocks: 2000, allowCustomChat: true },
+  ADMIN: { maxBlocks: Infinity }
+};
+
+function overTierLimit({ commander, numBlocks }) {
+  return (commander.tier === USAGE_TIER_NAMES.FREE && numBlocks > USAGE_TIERS.FREE.maxBlocks ||
+    commander.tier === USAGE_TIER_NAMES.STARTER && numBlocks > USAGE_TIERS.STARTER.maxBlocks ||
+    commander.tier === USAGE_TIER_NAMES.PRO && numBlocks > USAGE_TIERS.PRO.maxBlocks ||
+    commander.tier === USAGE_TIER_NAMES.ADMIN && numBlocks > USAGE_TIERS.ADMIN.maxBlocks
+  )
+}
+
+export async function handlePlayerCommand({ commander, bot, message, username = 'Commander' }) {
   console.log(`⚙️ Executing: ${message} from ${username}`);
 
   const msg = message.toLowerCase();
@@ -79,6 +101,13 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
     }
 
     if (steps.length > 0) {
+      //check build size, if user's tier too low, reject it
+      if (overTierLimit({ commander, numBlocks: steps.length })) {
+        bot.chat(`⚠️ Commander's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
+        console.log(`⚠️ Commander's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
+        return
+      }
+
       // adjust our steps to be relative to the bot's position
       const adjustedCommands = offsetStructure(steps, { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, { x: 2, y: 0, z: 2 });
 
@@ -102,8 +131,8 @@ export async function handlePlayerCommand(bot, message, username = 'Commander') 
         }
       });
     } else {
-      bot.chat(`❌ No structure received from AI`)
-      console.log(`❌ No structure received from AI`)
+      bot.chat(`❌ I couldn't understand how to build that. Try something simpler like "build a cube" or "build a house".`);
+      console.log(`❌ No structure received from AI or failed to parse`);
     }
 
     return;

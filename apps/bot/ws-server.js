@@ -21,11 +21,11 @@ export function startBotServer(bot) {
         console.log('message: ', message);
 
         //Update who the commander is in the game (player's UUID)
-        if(message.type === 'commander_change') {
+        if (message.type === 'commander_change') {
           const player = bot.players[message.message];
 
           //don't switch commanders if it is not found
-          if(player === undefined) {
+          if (player === undefined) {
             // can't update, player not on server
             ws.send(JSON.stringify({ type: 'commander_change_error', text: `Commander could not be updated to player with UUID: ${message.message}` }));
           } else {
@@ -97,7 +97,7 @@ export function startBotServer(bot) {
         }
 
         if (message.type === 'chat_command') {
-          await handlePlayerCommand(bot, message.message, 'Commander'); // or "WebUI"
+          await handlePlayerCommand({ commander, bot, message: message.message, username: 'Commander' }); // or "WebUI"
           return;
         }
 
@@ -147,7 +147,7 @@ export function startBotServer(bot) {
     const messageIsFromCommander = bot.players[username].uuid === commanderUUID;
     const messageIsFromBot = bot.entity.username === bot.players[username].username;
 
-    if(messageIsFromCommander || messageIsFromBot) {
+    if (messageIsFromCommander || messageIsFromBot) {
       const payload = {
         type: 'chat_feed',
         from: username,
@@ -160,9 +160,9 @@ export function startBotServer(bot) {
           client.send(JSON.stringify(payload));
         }
       }
-        
+
     }
-      
+
   });
 }
 

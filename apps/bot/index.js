@@ -65,7 +65,7 @@ bot.on('chat', async (username, message) => {
     //Allowing command
     console.log(`Allowing "${finalMessage}" from ${username}`)
 
-    await handlePlayerCommand(bot, finalMessage, username);
+    await handlePlayerCommand({ commander, bot, message: finalMessage, username });
   } catch (error) {
     console.error(`Could not process command. ${error.stack}`)
   }
