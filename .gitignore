@@ -139,3 +139,7 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 k.json
+
+# Ignore core in internal folders
+apps/api/core
+apps/functions/*/core

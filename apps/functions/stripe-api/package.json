@@ -1,5 +1,5 @@
 {
-    "name": "bot-builder-api",
+    "name": "stripe-api",
     "type": "module",
     "main": "index.js",
     "scripts": {

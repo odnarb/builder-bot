@@ -1,0 +1,7 @@
+name: stripe-api
+entryPoint: app
+runtime: nodejs22
+trigger: http
+availableMemoryMb: 256
+timeout: 60s
+source: .

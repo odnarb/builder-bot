@@ -1,4 +1,4 @@
-import { getUserByEmail, updateUserTier } from '../core/firestore/users.js';
+import { getUserByEmail, updateUserTier } from './core/firestore/users.js';
 
 export async function handleWebhook(req, res) {
     const sig = req.headers['stripe-signature'];
