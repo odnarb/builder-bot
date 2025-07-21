@@ -9,7 +9,15 @@ export async function getUserByEmail({ email }) {
 
     if (snaps.empty) return null;
 
-    const snap = snaps[0]
+    const snap = snaps.docs[0]
+
+    return { ...snap.data(), id: snap.id }
+}
+
+export async function getUserById({ userId }) {
+    const snap = await db.collection('users').doc(userId).get()
+
+    if (!snap.exists) return null;
 
     return { ...snap.data(), id: snap.id }
 }

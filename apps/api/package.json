@@ -2,11 +2,17 @@
     "name": "stripe-api",
     "type": "module",
     "main": "index.js",
+    "scripts": {
+        "dev": "cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json nodemon server.js"
+    },
     "dependencies": {
         "@google-cloud/firestore": "^7.11.3",
         "body-parser": "^1.20.2",
         "dotenv": "^17.2.0",
         "express": "^4.18.2",
         "stripe": "^12.0.0"
+    },
+    "devDependencies": {
+        "cross-env": "^7.0.3"
     }
 }
