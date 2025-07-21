@@ -2,7 +2,6 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import { createCheckoutSession } from './create-checkout-session.js';
 import { handleWebhook } from './webhook.js';
-import { getUserByEmail, getUserById } from './core/firestore/users.js';
 
 const app = express();
 
