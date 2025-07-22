@@ -12,20 +12,44 @@ export default function App() {
   const [tier, setTier] = useState(null);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      getAccessTokenSilently()
-        .then(token =>
-          fetch('/api/user/tier', {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          })
-        )
-        .then(res => res?.json())
-        .then(data => setTier(data?.tier || 'free'))
-        .catch(() => setTier('free'));
-    }
+    if (!isAuthenticated) return
+
+    const syncUserAndGetTier = async () => {
+      try {
+        const token = await getAccessTokenSilently();
+        // 1. Sync user on signup
+        await fetch('/api/user/signup', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: user.email,
+            name: user.name,
+            auth0LoginId: user.sub,
+            picture: user.picture,
+          }),
+        });
+
+        // 2. Fetch user's tier
+        const res = await fetch('/api/user/tier', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await res.json();
+        setTier(data?.tier || 'free');
+      } catch (err) {
+        console.error('❌ Auth + Tier Sync Error:', err);
+        setTier('free');
+      }
+    };
+
+    syncUserAndGetTier();
   }, [isAuthenticated, getAccessTokenSilently]);
+
 
   if (isLoading) return <div className="text-white p-6">🔐 Checking auth...</div>;
 

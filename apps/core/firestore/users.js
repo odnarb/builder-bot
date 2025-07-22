@@ -2,6 +2,17 @@ import { Firestore } from '@google-cloud/firestore';
 
 const db = new Firestore();
 
+export async function createUser({ user }) {
+    const userRef = db.collection('users').doc(user.auth0LoginId);
+    const doc = await userRef.get();
+
+    if (!doc.exists) {
+        // 🆕 First time signup
+        console.log(`Adding new user: ${user.auth0LoginId}`)
+        return userRef.set(user);
+    }
+}
+
 export async function getUserByEmail({ email }) {
     const snaps = await db.collection('users')
         .where('email', '==', email)
