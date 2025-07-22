@@ -33,7 +33,7 @@ export default function App() {
         });
 
         // 2. Fetch user's tier
-        const res = await fetch('/api/user/tier', {
+        const res = await fetch(`/api/user/tier?email=${user.email}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
