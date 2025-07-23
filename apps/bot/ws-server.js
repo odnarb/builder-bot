@@ -1,14 +1,11 @@
 import { WebSocketServer } from 'ws';
-import Vec3 from 'vec3';
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
 import { handlePlayerCommand } from './command-router.js';
 import { executeCommands } from './execute-commands.js';
 
-let commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
-
-export function startBotServer(bot) {
+export function startBotServer({ bot, commanderUUID }) {
   const wss = new WebSocketServer({ port: 3002 });
 
   wss.on('connection', ws => {

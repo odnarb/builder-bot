@@ -7,14 +7,15 @@ import { startBotServer } from './ws-server.js';
 import { handlePlayerCommand } from './command-router.js';
 
 //master player
-const commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
+const COMMANDER_UUID = process.env.COMMANDER_UUID || 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
 
-const MC_HOST_IP = '127.0.0.1'
-const MC_HOST_PORT = 25565
-const MC_HOST_VERSION = '1.20.4'
+//minecraft server info
+const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
+const MC_HOST_PORT = process.env.MC_HOST_PORT || 25565
+const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
 
 //bot's name
-const BOT_NAME = 'BuilderBot'
+const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
 
 const bot = mineflayer.createBot({
   username: BOT_NAME,
@@ -38,9 +39,7 @@ bot.once('spawn', async () => {
   //   bot.waitForTicks(2 + i); // slight stagger
   // });
 
-  startBotServer(bot); // ⬅️ Enable WebSocket control
-
-  const base = bot.entity.position.offset(1, 0, 1);
+  startBotServer({ bot, commanderUUID: COMMANDER_UUID }); // ⬅️ Enable WebSocket control
 });
 
 bot.on('chat', async (username, message) => {
