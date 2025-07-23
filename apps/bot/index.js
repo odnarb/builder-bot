@@ -6,8 +6,14 @@ import { startBotServer } from './ws-server.js';
 
 import { handlePlayerCommand } from './command-router.js';
 
-//master player
-const COMMANDER_UUID = process.env.COMMANDER_UUID || 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
+// current web token from webUI
+const AUTH_TOKEN = process.env.AUTH_TOKEN || null
+
+//BuilderBot platform auth0 user id
+const USER_ID = process.env.USER_ID || null
+
+//master player Minecraft UUID
+const COMMANDER_UUID = process.env.COMMANDER_UUID || null
 
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
