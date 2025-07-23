@@ -1,13 +1,27 @@
 import React, { useContext, useState } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 import { WebSocketContext } from './WebSocketProvider';
 import LaunchBotModal from './LaunchBotModal';
 
 export default function ControlPanel() {
   const { sendMessage } = useContext(WebSocketContext);
+  const { user, getAccessTokenSilently } = useAuth0();
   const [showLaunchModal, setShowLaunchModal] = useState(false);
+  const [authToken, setAuthToken] = useState(null);
 
   const handleLaunchBot = (envVars) => {
     window.electronAPI?.launchBot?.(envVars);
+  };
+
+  const openModal = async () => {
+    try {
+      const token = await getAccessTokenSilently();
+
+      setAuthToken(token);
+      setShowLaunchModal(true);
+    } catch (e) {
+      console.error('🔒 Failed to fetch token:', e);
+    }
   };
 
   return (
@@ -44,7 +58,7 @@ export default function ControlPanel() {
 
       <div>
         <button
-          onClick={() => setShowLaunchModal(true)}
+          onClick={openModal}
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
         >
           🧠 Launch BuilderBot
@@ -55,6 +69,8 @@ export default function ControlPanel() {
         <LaunchBotModal
           onClose={() => setShowLaunchModal(false)}
           onLaunch={handleLaunchBot}
+          authToken={authToken}
+          userId={user?.sub}
         />
       )}
     </div>

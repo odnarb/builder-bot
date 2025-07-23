@@ -1,6 +1,10 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const { spawn } = require('child_process');
+import { app, BrowserWindow, ipcMain } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -20,17 +24,21 @@ app.whenReady().then(createWindow);
 
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
-    const botProcess = spawn('node', ['apps/bot/index.js'], {
-        env: {
-            ...process.env,
-            AUTH_TOKEN: env.authToken,
-            USER_ID: env.userId,
-            COMMANDER_UUID: env.commanderUUID,
-            MC_HOST_IP: env.mcHostIp,
-            MC_HOST_PORT: env.mcHostPort,
-            MC_HOST_VERSION: env.mcHostVersion,
-            BOT_NAME: env.botName,
-        },
+    const envVars = {
+        //hard-code this for now until we split the AI call to the api
+        OPENAI_API_KEY: 'xyz',
+        AUTH_TOKEN: env.authToken,
+        USER_ID: env.userId,
+        COMMANDER_UUID: env.commanderUUID,
+        MC_HOST_IP: env.mcHostIp,
+        MC_HOST_PORT: env.mcHostPort,
+        MC_HOST_VERSION: env.mcHostVersion,
+        BOT_NAME: env.botName,
+    }
+
+    const botProcess = spawn('node', ['bot/index.js'], {
+        env: envVars,
+        LANG: 'en_US.UTF-8',
         cwd: path.resolve(__dirname, '..'),
         stdio: 'inherit'
     });
