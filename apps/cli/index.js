@@ -13,7 +13,7 @@ if (!Array.isArray(structure) || structure.length === 0) {
 
 console.log(`📨 Sending ${structure.length} instructions to bot...`);
 
-const ws = new WebSocket('ws://localhost:3001');
+const ws = new WebSocket('ws://localhost:3002');
 
 ws.on('open', () => {
   ws.send(JSON.stringify(structure));
