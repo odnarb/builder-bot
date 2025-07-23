@@ -4,7 +4,7 @@ const RETRY_LIMIT = 100;
 
 export const WebSocketContext = createContext({
   messages: [],
-  sendMessage: () => {},
+  sendMessage: () => { },
 });
 
 export default function WebSocketProvider({ children }) {
@@ -15,7 +15,7 @@ export default function WebSocketProvider({ children }) {
   const [messages, setMessages] = useState([]);
 
   const connectWebSocket = () => {
-    const socket = new WebSocket('ws://localhost:3001');
+    const socket = new WebSocket('ws://localhost:3002');
     socketRef.current = socket;
 
     socket.onopen = () => {

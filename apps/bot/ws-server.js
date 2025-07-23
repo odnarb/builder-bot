@@ -9,7 +9,7 @@ import { executeCommands } from './execute-commands.js';
 let commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
 
 export function startBotServer(bot) {
-  const wss = new WebSocketServer({ port: 3001 });
+  const wss = new WebSocketServer({ port: 3002 });
 
   wss.on('connection', ws => {
     console.log('📡 Client connected');
@@ -140,7 +140,7 @@ export function startBotServer(bot) {
     });
   });
 
-  console.log('🛰️ Bot WebSocket server running on ws://localhost:3001');
+  console.log('🛰️ Bot WebSocket server running on ws://localhost:3002');
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {

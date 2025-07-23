@@ -9,14 +9,18 @@ import { handlePlayerCommand } from './command-router.js';
 //master player
 const commanderUUID = 'd32f0358-7604-3be7-b35b-6f8e6ec02e05'
 
+const MC_HOST_IP = '127.0.0.1'
+const MC_HOST_PORT = 25565
+const MC_HOST_VERSION = '1.20.4'
+
 //bot's name
-const botName = 'BuilderBot'
+const BOT_NAME = 'BuilderBot'
 
 const bot = mineflayer.createBot({
-  host: '127.0.0.1',
-  port: 25565,
-  username: botName,
-  version: '1.20.4'
+  username: BOT_NAME,
+  host: MC_HOST_IP,
+  port: MC_HOST_PORT,
+  version: MC_HOST_VERSION
 });
 
 bot.loadPlugin(pathfinder);
@@ -24,8 +28,8 @@ bot.loadPlugin(pathfinder);
 bot.once('spawn', async () => {
   console.log('🤖 Bot spawned!');
 
-  await bot.waitForChunksToLoad(); // ⬅️ ensures blocks are loaded
-  await bot.waitForTicks(20);      // ⬅️ slight extra delay just in case
+  await bot.waitForChunksToLoad(); // ensures blocks are loaded
+  await bot.waitForTicks(20);      // slight extra delay just in case
 
   //give self items needed
   // const neededItems = ['stone', 'oak_planks', 'torch', 'bed'];
@@ -47,7 +51,7 @@ bot.on('chat', async (username, message) => {
     }
 
     // Only respond to commands with format like: "@BuilderBot build a fortress"
-    if (!message.includes(`@${botName}`)) {
+    if (!message.includes(`@${BOT_NAME}`)) {
       return;
     }
 
@@ -59,8 +63,8 @@ bot.on('chat', async (username, message) => {
       return
     }
 
-    //remove the "@{botName} " part since we've verified it's directed towards the bot.
-    const finalMessage = message.slice(botName.length + 2, message.length)
+    //remove the "@{BOT_NAME} " part since we've verified it's directed towards the bot.
+    const finalMessage = message.slice(BOT_NAME.length + 2, message.length)
 
     //Allowing command
     console.log(`Allowing "${finalMessage}" from ${username}`)
