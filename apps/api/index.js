@@ -9,8 +9,13 @@ import 'dotenv/config.js';
 import {
     createUser,
     getUserByEmail,
-    getUserById
+    getUserById,
+    updateUserTier
 } from './core/firestore/users.js';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2024-04-10',
+});
 
 const app = express();
 
@@ -82,7 +87,6 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
             createdAt: new Date().toISOString()
         }
 
-        console.log(`Creating user: `, user)
         await createUser({ user });
 
         return res.send(200);
@@ -113,8 +117,8 @@ app.post('/user/plan', jwtCheck, async (req, res) => {
     }
 });
 
-app.post('stripe/create-checkout-session', async (req, res) => {
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+app.post('/stripe/create-checkout-session', async (req, res) => {
+    const CHECKOUT_URL = process.env.NODE_ENV === 'production' ? `https://${process.env.DOMAIN}` : 'http://localhost:5173';
 
     // Map tier → Stripe product
     const productMap = {
@@ -139,8 +143,8 @@ app.post('stripe/create-checkout-session', async (req, res) => {
         const session = await stripe.checkout.sessions.create({
             mode: 'subscription',
             line_items: [{ price, quantity: 1 }],
-            success_url: `https://${process.env.DOMAIN}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `https://${process.env.DOMAIN}/checkout/cancel`,
+            success_url: `${CHECKOUT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${CHECKOUT_URL}/checkout/cancel`,
             metadata: { username, tier }
         });
 
@@ -149,6 +153,33 @@ app.post('stripe/create-checkout-session', async (req, res) => {
         console.error(`❌ Stripe session error: ${err.message}`);
         return res.status(500).json({ error: 'Could not create checkout session' });
     }
+})
+
+app.post('/stripe/confirm-checkout', jwtCheck, async (req, res) => {
+    const { sessionId } = req.body;
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ['subscription'],
+    });
+
+    const customerEmail = session.customer_email;
+    const productId = session.subscription.plan.product;
+
+    // Map Stripe price IDs to tiers
+    const tier = {
+        [process.env.STRIPE_PRODUCT_ID_STARTER_TIER]: 'starter',
+        [process.env.STRIPE_PRODUCT_ID_PRO_TIER]: 'pro',
+        [process.env.STRIPE_PRODUCT_ID_ADMIN_TIER]: 'admin',
+    }[productId] || 'free';
+
+    console.log(`Updating user tier customerEmail: `, customerEmail)
+    console.log(`Updating user tier: `, req.auth.payload.sub)
+    console.log(`Updating user tier: `, tier)
+
+    const user = await getUserById({ userId: req.auth.payload.sub });
+
+    await updateUserTier({ userId: user.id, tier });
+
+    res.json({ status: 'success', tier });
 })
 
 app.get('/', (req, res) => {

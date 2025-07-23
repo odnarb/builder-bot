@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 
 import WebSocketProvider from './components/WebSocketProvider';
@@ -6,18 +7,49 @@ import BotConsole from './components/BotConsole';
 import ControlPanel from './components/ControlPanel';
 import PromptInput from './components/PromptInput';
 import PlanSelector from './components/PlanSelector';
+import CheckoutSuccess from './components/CheckoutSuccess';
+
+function Dashboard({ user, logout, tier }) {
+  const tierColor = {
+    free: 'bg-gray-600',
+    starter: 'bg-blue-600',
+    pro: 'bg-purple-600',
+    admin: 'bg-red-600',
+  }[tier] || 'bg-gray-600';
+
+  return (
+    <WebSocketProvider>
+      <div className="min-h-screen bg-gray-950 text-white p-6 space-y-4">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-green-400">🧠 Minecraft AI Agent Dashboard</h1>
+          <div>
+            <span className="mr-4">
+              👤 {user?.name}
+              <span className={`ml-2 px-2 py-0.5 text-xs rounded uppercase ${tierColor}`}>{tier}</span>
+            </span>
+            <button onClick={() => logout({ returnTo: window.location.origin })} className="text-red-400 hover:underline">
+              Log Out
+            </button>
+          </div>
+        </div>
+        <PromptInput />
+        <ControlPanel />
+        <BotConsole />
+      </div>
+    </WebSocketProvider>
+  );
+}
 
 export default function App() {
   const { loginWithRedirect, logout, isAuthenticated, isLoading, user, getAccessTokenSilently } = useAuth0();
   const [tier, setTier] = useState(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!isAuthenticated) return;
 
     const syncUserAndGetTier = async () => {
       try {
         const token = await getAccessTokenSilently();
-        // 1. Sync user on signup
         await fetch('/api/user/signup', {
           method: 'POST',
           headers: {
@@ -32,11 +64,8 @@ export default function App() {
           }),
         });
 
-        // 2. Fetch user's tier
         const res = await fetch(`/api/user/tier?email=${user.email}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
         const data = await res.json();
@@ -50,33 +79,29 @@ export default function App() {
     syncUserAndGetTier();
   }, [isAuthenticated, getAccessTokenSilently]);
 
-
   if (isLoading) return <div className="text-white p-6">🔐 Checking auth...</div>;
-
   if (!isAuthenticated) {
-    loginWithRedirect(); // 🚨 Redirects to Auth0 login
+    loginWithRedirect();
     return <div className="text-white p-6">Redirecting to login...</div>;
   }
 
-  if (!tier) return <div className="text-white p-6">Loading tier...</div>;
-  if (tier === 'pending') return <PlanSelector onSelect={setTier} />;
-
   return (
-    <WebSocketProvider>
-      <div className="min-h-screen bg-gray-950 text-white p-6 space-y-4">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-green-400">🧠 Minecraft AI Agent Dashboard</h1>
-          <div>
-            <span className="mr-4">👤 {user?.name}</span>
-            <button onClick={() => logout({ returnTo: window.location.origin })} className="text-red-400 hover:underline">
-              Log Out
-            </button>
-          </div>
-        </div>
-        <PromptInput />
-        <ControlPanel />
-        <BotConsole />
-      </div>
-    </WebSocketProvider>
+    <Router>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            !tier ? (
+              <div className="text-white p-6">Loading tier...</div>
+            ) : tier === 'pending' ? (
+              <PlanSelector onSelect={setTier} />
+            ) : (
+              <Dashboard user={user} logout={logout} tier={tier} />
+            )
+          }
+        />
+        <Route path="/checkout/success" element={<CheckoutSuccess />} />
+      </Routes>
+    </Router>
   );
 }

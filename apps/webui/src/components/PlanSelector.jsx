@@ -17,7 +17,7 @@ export default function PlanSelector({ onSelect }) {
             return;
         }
 
-        const res = await fetch('/api/create-checkout-session', {
+        const res = await fetch('/api/stripe/create-checkout-session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tier }),
