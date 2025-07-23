@@ -26,8 +26,6 @@ app.whenReady().then(createWindow);
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
     const envVars = {
-        //hard-code this for now until we split the AI call to the api
-        OPENAI_API_KEY: 'xyz',
         AUTH_TOKEN: env.authToken,
         USER_ID: env.userId,
         COMMANDER_UUID: env.commanderUUID,

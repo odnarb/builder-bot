@@ -6,12 +6,6 @@ import { startBotServer } from './ws-server.js';
 
 import { handlePlayerCommand } from './command-router.js';
 
-// current web token from webUI
-const AUTH_TOKEN = process.env.AUTH_TOKEN || null
-
-//BuilderBot platform auth0 user id
-const USER_ID = process.env.USER_ID || null
-
 //master player Minecraft UUID
 const COMMANDER_UUID = process.env.COMMANDER_UUID || null
 

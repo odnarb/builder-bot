@@ -1,6 +1,7 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import Stripe from 'stripe';
+import { OpenAI } from 'openai';
 
 import jwtCheck from './middleware/auth0-jwt-check.js';
 
@@ -16,6 +17,8 @@ import {
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-04-10',
 });
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
 
@@ -181,6 +184,45 @@ app.post('/stripe/confirm-checkout', jwtCheck, async (req, res) => {
 
     res.json({ status: 'success', tier });
 })
+
+app.post('/ai-get-structure', async (req, res) => {
+    const { message } = req.body;
+
+    try {
+        const chat = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are a Minecraft builder AI.
+            Return only a raw JSON array of blocks like:
+            [
+              { "x": 0, "y": 0, "z": 0, "block": "cobblestone" },
+              { "x": 0, "y": 1, "z": 0, "block": "cobblestone" }
+            ]
+            All positions must be relative to origin (0,0,0).
+            Do NOT include quotes, explanations, or markdown.
+            Assume there is a foundation, but from there only place blocks on top of other valid blocks within the build.
+            Assume structures being requested need a roof unless otherwise stated.
+            Sort the blocks in the array so to minimize back-and-forth movement, and from the ground up.
+            Keep it appropriate for all audiences which includes young children.
+            If nothing can be built from the request, respond with an empty array like: []`,
+                },
+                {
+                    role: 'user',
+                    content: message,
+                },
+            ],
+        });
+
+        const structure = chat.choices[0].message.content.trim();
+        res.json({ structure });
+    } catch (err) {
+        console.error('❌ AI structure error:', err);
+        res.status(500).json({ error: 'Failed to generate structure' });
+    }
+});
+
 
 app.get('/', (req, res) => {
     res.send('✅ API is running');
