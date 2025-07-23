@@ -5,7 +5,8 @@ const { goals } = pkg;
 import { handlePlayerCommand } from './command-router.js';
 import { executeCommands } from './execute-commands.js';
 
-export function startBotServer({ bot, commanderUUID }) {
+export function startBotServer({ bot, commander }) {
+  console.log(`Starting bot WebSocketServer on port 3002...`)
   const wss = new WebSocketServer({ port: 3002 });
 
   wss.on('connection', ws => {
@@ -17,19 +18,20 @@ export function startBotServer({ bot, commanderUUID }) {
 
         console.log('message: ', message);
 
+        //DISABLE THIS FOR NOW
         //Update who the commander is in the game (player's UUID)
-        if (message.type === 'commander_change') {
-          const player = bot.players[message.message];
+        // if (message.type === 'commander_change') {
+        //   const player = bot.players[message.message];
 
-          //don't switch commanders if it is not found
-          if (player === undefined) {
-            // can't update, player not on server
-            ws.send(JSON.stringify({ type: 'commander_change_error', text: `Commander could not be updated to player with UUID: ${message.message}` }));
-          } else {
-            commanderUUID = message.message
-            ws.send(JSON.stringify({ type: 'commander_changed', text: `Commander updated to player ${player.username} (uuid: ${player.uuid})` }));
-          }
-        }
+        //   //don't switch commanders if it is not found
+        //   if (player === undefined) {
+        //     // can't update, player not on server
+        //     ws.send(JSON.stringify({ type: 'commander_change_error', text: `Commander could not be updated to player with UUID: ${message.message}` }));
+        //   } else {
+        //     commanderUUID = message.message
+        //     ws.send(JSON.stringify({ type: 'commander_changed', text: `Commander updated to player ${player.username} (uuid: ${player.uuid})` }));
+        //   }
+        // }
 
         // 🛰️ Bot Position Request
         if (message.type === 'get_position') {
@@ -141,7 +143,7 @@ export function startBotServer({ bot, commanderUUID }) {
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {
-    const messageIsFromCommander = bot.players[username].uuid === commanderUUID;
+    const messageIsFromCommander = bot.players[username].uuid === commander.uuid;
     const messageIsFromBot = bot.entity.username === bot.players[username].username;
 
     if (messageIsFromCommander || messageIsFromBot) {

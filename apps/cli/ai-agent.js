@@ -2,7 +2,7 @@
 
 // 🧠 Ask ChatGPT for block structure
 export async function getStructureFromAI(message) {
-  const res = await fetch('/api/ai-get-structure', {
+  const res = await fetch(`${process.env.API_URL}/api/ai-get-structure`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.AUTH_TOKEN}`,

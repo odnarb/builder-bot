@@ -24,14 +24,33 @@ const app = express();
 
 app.use(bodyParser.json());
 
+//rewrite urls from /api to /
+if (process.env.NODE_ENV !== 'production') {
+    app.use((req, res, next) => {
+        if (req.url.startsWith('/api/')) {
+            req.url = req.url.replace(/^\/api/, '');
+        }
+        next();
+    })
+}
+
 app.get('/user/tier', jwtCheck, async (req, res) => {
     const email = req.query.email;
-    if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
+    const userId = req.query.userId;
+
+    if (!email && !userId) {
+        return res.status(400).json({ error: 'email or userId is required' });
     }
 
+    let user
+
     try {
-        const user = await getUserByEmail({ email });
+        if (email) {
+            user = await getUserByEmail({ email });
+        } else {
+            user = await getUserById({ userId });
+        }
+
         if (!user) {
             return res.json({ tier: 'pending', exists: false });
         }
@@ -226,6 +245,13 @@ app.post('/ai-get-structure', async (req, res) => {
 
 app.get('/', (req, res) => {
     res.send('✅ API is running');
+});
+
+app.use((req, res, next) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: `Cannot ${req.method} ${req.originalUrl}`,
+    });
 });
 
 // Global error handler

@@ -26,6 +26,8 @@ app.whenReady().then(createWindow);
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
     const envVars = {
+        //TODO: UPDATE THIS TO PROD VS DEV
+        API_URL: 'http://localhost:3001',
         AUTH_TOKEN: env.authToken,
         USER_ID: env.userId,
         COMMANDER_UUID: env.commanderUUID,
