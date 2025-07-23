@@ -11,7 +11,7 @@ const openai = new OpenAI({
 // 🛰️ Get bot's live position
 function getBotPosition() {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket('ws://localhost:3001');
+    const ws = new WebSocket('ws://localhost:3002');
 
     ws.on('open', () => {
       ws.send(JSON.stringify({ type: 'get_position' }));
@@ -31,7 +31,7 @@ function getBotPosition() {
 
 function getInventory() {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket('ws://localhost:3001');
+    const ws = new WebSocket('ws://localhost:3002');
     ws.on('open', () => {
       ws.send(JSON.stringify({ type: 'get_inventory' }));
     });
@@ -48,7 +48,7 @@ function getInventory() {
 
 function getNearbyBlocks() {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket('ws://localhost:3001');
+    const ws = new WebSocket('ws://localhost:3002');
     ws.on('open', () => {
       ws.send(JSON.stringify({ type: 'get_nearby_blocks' }));
     });
@@ -96,7 +96,7 @@ export async function getStructureFromAI(message) {
 
 // 📤 Send to bot
 function sendToBot(structure) {
-  const ws = new WebSocket('ws://localhost:3001');
+  const ws = new WebSocket('ws://localhost:3002');
   ws.on('open', () => {
     ws.send(JSON.stringify(structure));
     console.log(`✅ Sent ${structure.length} blocks to bot.`);
