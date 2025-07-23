@@ -72,7 +72,13 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
     const { email, name, auth0LoginId, picture } = req.body
 
     try {
-        const user = { email, name, auth0LoginId, picture }
+        const user = {
+            email,
+            name,
+            auth0LoginId,
+            picture, tier: 'pending',
+            createdAt: new Date().toISOString()
+        }
 
         console.log(`Creating user: `, user)
         await createUser({ user });
@@ -81,6 +87,27 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
     } catch (err) {
         console.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/api/user/plan', jwtCheck, async (req, res) => {
+    try {
+        const { tier } = req.body;
+        const userId = req.auth.payload.sub;
+
+        if (!['free', 'starter', 'pro'].includes(tier)) {
+            return res.status(400).json({ error: 'Invalid tier selected' });
+        }
+
+        await db.collection('users').doc(userId).set(
+            { tier },
+            { merge: true } // ✅ Only update tier field
+        );
+
+        res.json({ status: 'updated', tier });
+    } catch (err) {
+        console.error('❌ Tier update failed:', err);
+        res.status(500).json({ error: 'Server error' });
     }
 });
 
