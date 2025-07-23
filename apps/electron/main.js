@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 
 function createWindow() {
     const win = new BrowserWindow({
+        autoHideMenuBar: true,
         width: 1200,
         height: 800,
         webPreferences: {
