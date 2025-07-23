@@ -1,39 +1,46 @@
-// src/pages/CheckoutSuccess.jsx
 import React, { useEffect, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import Spinner from './Spinner';
 
 export default function CheckoutSuccess() {
     const [params] = useSearchParams();
     const { getAccessTokenSilently } = useAuth0();
     const navigate = useNavigate();
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const processCheckout = async () => {
             const sessionId = params.get('session_id');
             if (!sessionId) return;
 
-            const token = await getAccessTokenSilently();
+            try {
+                const token = await getAccessTokenSilently();
 
-            await fetch('/api/stripe/confirm-checkout', {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ sessionId }),
-            });
+                await fetch('/api/stripe/confirm-checkout', {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ sessionId }),
+                });
 
-            navigate('/'); // ✅ Go back to main app
-            window.location.reload();
+                navigate('/'); // Navigate back to main app
+                window.location.reload();
+            } catch (error) {
+                console.error('❌ Checkout confirmation failed:', error);
+            } finally {
+                setLoading(false);
+            }
         };
 
         processCheckout();
     }, [params, navigate, getAccessTokenSilently]);
 
-    return (
-        <div className="text-white p-6">
-            🎉 Payment successful! Updating your account...
-        </div>
+    return loading ? (
+        <Spinner text="Processing payment..." />
+    ) : (
+        <Spinner text="Payment processed! Redirecting..." />
     );
 }

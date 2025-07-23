@@ -8,6 +8,7 @@ import ControlPanel from './components/ControlPanel';
 import PromptInput from './components/PromptInput';
 import PlanSelector from './components/PlanSelector';
 import CheckoutSuccess from './components/CheckoutSuccess';
+import Spinner from './components/Spinner';
 
 function Dashboard({ user, logout, tier }) {
   const tierColor = {
@@ -79,10 +80,11 @@ export default function App() {
     syncUserAndGetTier();
   }, [isAuthenticated, getAccessTokenSilently]);
 
-  if (isLoading) return <div className="text-white p-6">🔐 Checking auth...</div>;
+  if (isLoading) return <Spinner text="Loading..." />;
+
   if (!isAuthenticated) {
     loginWithRedirect();
-    return <div className="text-white p-6">Redirecting to login...</div>;
+    return <Spinner text="Loading..." />;
   }
 
   return (
@@ -92,7 +94,7 @@ export default function App() {
           path="/"
           element={
             !tier ? (
-              <div className="text-white p-6">Loading tier...</div>
+              <Spinner text="Loading..." />
             ) : tier === 'pending' ? (
               <PlanSelector onSelect={setTier} />
             ) : (

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 export default function LaunchBotModal({ onClose, onLaunch, authToken, userId }) {
     const [form, setForm] = useState({
-        commanderUUID: '',
+        commanderUUID: 'd32f0358-7604-3be7-b35b-6f8e6ec02e05',
         mcHostIp: '127.0.0.1',
         mcHostPort: 25565,
         mcHostVersion: '1.20.4',
