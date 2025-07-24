@@ -4,7 +4,7 @@ const { pathfinder } = pkg;
 
 import { startBotServer } from './ws-server.js';
 import { handlePlayerCommand } from './command-router.js';
-import { createSession, getUserTier } from './apiClient.js';
+import { addChatLogEntry, addLogEntry, createSession, getUserTier } from './apiClient.js';
 
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
@@ -78,6 +78,8 @@ bot.on('chat', async (username, message) => {
 
     //Allowing command
     console.log(`Allowing "${finalMessage}" from ${username}`)
+
+    addChatLogEntry({ message })
 
     await handlePlayerCommand({ commander, bot, message: finalMessage, username });
   } catch (error) {

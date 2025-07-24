@@ -73,6 +73,18 @@ export async function uploadBuildSteps({ buildId, steps }) {
     return res.json();
 }
 
+export async function addChatLogEntry({ message }) {
+    return addLogEntry({ type: "chat", message, level: 0 })
+}
+
+export async function addMoveLogEntry({ data }) {
+    return addLogEntry({ type: "command", message: "move to", data, level: 0 })
+}
+
+export async function addStopLogEntry() {
+    return addLogEntry({ type: "command", message: "stop", level: 0 })
+}
+
 // Add log entry
 export async function addLogEntry({ log }) {
     if (!log) {

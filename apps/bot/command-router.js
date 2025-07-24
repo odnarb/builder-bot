@@ -6,7 +6,7 @@ import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
 import { getStructureFromAI } from '../cli/ai-agent.js';
 
-import fs from 'fs'
+import { addChatLogEntry } from './apiClient.js';
 
 const USAGE_TIER_NAMES = {
   FREE: 'free',
@@ -46,6 +46,9 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         Math.floor(playerEntity.position.z)
       );
       bot.pathfinder.setGoal(goal);
+
+      addMoveLogEntry({ data: JSON.stringify(goal) })
+
       bot.chat("On my way!");
     } else {
       // Match "come here x:0,y:0,z:0" using regex
@@ -59,6 +62,9 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
           const goal = new goals.GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
           bot.pathfinder.setGoal(goal);
+
+          addMoveLogEntry({ data: JSON.stringify(goal) })
+
           bot.chat("On my way! This might take a while...");
         } else {
           bot.chat(`⚠️ Invalid coordinates given.`);
@@ -73,6 +79,9 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
   if (msg === 'stop') {
     bot.pathfinder.setGoal(null);
     bot.chat("Okay, stopped.");
+
+    addStopLogEntry({ data: JSON.stringify(goal) })
+
     return;
   }
 
@@ -93,7 +102,6 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       try {
         steps = JSON.parse(rawSteps)
 
-        // fs.writeFileSync(`ai-build-structures.log`, JSON.stringify(steps))
       } catch (error) {
         steps = []
         console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
