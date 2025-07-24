@@ -8,7 +8,7 @@ This mod brings your ideas to life through intelligent structure generation — 
 ## 🆓 Free Tier Features
 - ✅ Use AI to generate builds from natural language (e.g., “build a stone house with windows”)
 - ✅ Supports **up to 50 blocks** per build
-- ✅ WewbUI & In-game chat-driven command system
+- ✅ WebbUI & In-game chat-driven command system
 - ✅ Works in **singleplayer and multiplayer**
 - ✅ No account or payment required
 
