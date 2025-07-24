@@ -3,8 +3,8 @@ import pkg from 'mineflayer-pathfinder';
 const { pathfinder } = pkg;
 
 import { startBotServer } from './ws-server.js';
-
 import { handlePlayerCommand } from './command-router.js';
+import { getUserTier } from './apiClient.js';
 
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
@@ -15,11 +15,7 @@ const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
 const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
 
 //Get user tier information before starting bot
-const tierRes = await fetch(`${process.env.API_URL}/api/user/tier?userId=${encodeURIComponent(process.env.USER_ID)}`, {
-  headers: { Authorization: `Bearer ${process.env.AUTH_TOKEN}` },
-});
-
-const tierData = await tierRes.json();
+const tierData = await getUserTier()
 
 //get user's tier and create the commander object
 const commander = {
