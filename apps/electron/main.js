@@ -28,6 +28,8 @@ ipcMain.on('launch-bot', (event, env) => {
     const envVars = {
         //TODO: UPDATE THIS TO PROD VS DEV
         API_URL: 'http://localhost:3001',
+        // when launching, create an env var as the session id to save builds and chats to
+        SESSION_ID: crypto.randomUUID(),
         AUTH_TOKEN: env.authToken,
         USER_ID: env.userId,
         COMMANDER_UUID: env.commanderUUID,
