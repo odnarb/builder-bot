@@ -1,0 +1,107 @@
+body {
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #1e1e1e;
+    color: #f0f0f0;
+    line-height: 1.6;
+}
+
+header {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+header img {
+    width: 100px;
+    height: 100px;
+    border-radius: 16px;
+}
+
+h1 {
+    font-size: 2rem;
+    margin: 1rem 0 0.5rem;
+}
+
+main {
+    max-width: 800px;
+    margin: auto;
+    padding: 1rem;
+}
+
+section {
+    margin: 2rem 0;
+}
+
+a {
+    color: #00ccff;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+ul {
+    padding-left: 1.2rem;
+}
+
+.buttons {
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.buttons a {
+    display: inline-block;
+    margin: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background: #00ccff;
+    color: #000;
+    font-weight: bold;
+    border-radius: 8px;
+    text-decoration: none;
+}
+
+.buttons a:hover {
+    background: #00b5e0;
+}
+
+/* 404 Page Layout */
+.error-page {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    text-align: center;
+}
+
+.error-page img {
+    width: 120px;
+    height: 120px;
+    border-radius: 16px;
+    margin-bottom: 1rem;
+}
+
+.error-page h1 {
+    font-size: 3rem;
+    margin: 0.5rem 0;
+}
+
+.error-page p {
+    font-size: 1.2rem;
+    margin-bottom: 2rem;
+}
+
+.error-page a.button {
+    padding: 0.75rem 1.5rem;
+    background: #00ccff;
+    color: #000;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: bold;
+}
+
+.error-page a.button:hover {
+    background: #00b5e0;
+}
