@@ -22,7 +22,7 @@ Unlock premium features with a subscription:
 - 🤝 Share Builds with Friends
 - 📜 View your build history and saved plans
 - 📈 Priority support
-- Discord integration
+- ~~🧠 Discord integration~~ (some day)
 
 > The free version is fully functional and gives you access to the AI system. No features are locked behind a paywall — premium upgrades are optional for larger-scale builds and extended features.
 
@@ -36,9 +36,10 @@ Unlock premium features with a subscription:
 ---
 
 ## 📦 Installation
-1. Requires [Fabric/Forge/Quilt] + any required dependencies
-2. Drop this mod into your `mods` folder
-3. Launch Minecraft and type `!build cube house` to begin!
+1. Requires Forge + any required dependencies
+2. Drop this mod into your `mods` folder (really anywhere on the computer should work)
+3. Launch the BuilderBot dashboard, get your bot to connect to your Minecraft server
+4. Give build commands from the UI!
 
 ---
 
