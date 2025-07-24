@@ -30,6 +30,13 @@ Upgrade anytime at: **[https://mcbuilderbot.com](https://mcbuilderbot.com)**
 
 ---
 
+## ⚠️ Note: BuilderBot currently requires:
+- 🔓 Cheats enabled
+- 🛡️ OP permissions for /give 
+- 🎨 Creative mode access (until survival support is added)
+
+---
+
 ## 📦 Installation
 1. Requires [Fabric/Forge/Quilt] + any required dependencies
 2. Drop this mod into your `mods` folder
