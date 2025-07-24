@@ -4,7 +4,7 @@ const { pathfinder } = pkg;
 
 import { startBotServer } from './ws-server.js';
 import { handlePlayerCommand } from './command-router.js';
-import { getUserTier } from './apiClient.js';
+import { createSession, getUserTier } from './apiClient.js';
 
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
@@ -13,6 +13,16 @@ const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
 
 //bot's name
 const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
+
+//start the session on the backend for logging
+await createSession({
+  USER_ID,
+  COMMANDER_UUID,
+  MC_HOST_IP,
+  MC_HOST_PORT,
+  MC_HOST_VERSION,
+  BOT_NAME
+})
 
 //Get user tier information before starting bot
 const tierData = await getUserTier()
