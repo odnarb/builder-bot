@@ -213,19 +213,18 @@ app.post('/ai-get-structure', async (req, res) => {
             messages: [
                 {
                     role: 'system',
-                    content: `You are a Minecraft builder AI.
-            Return only a raw JSON array of blocks like:
-            [
-              { "x": 0, "y": 0, "z": 0, "block": "cobblestone" },
-              { "x": 0, "y": 1, "z": 0, "block": "cobblestone" }
-            ]
-            All positions must be relative to origin (0,0,0).
-            Do NOT include quotes, explanations, or markdown.
-            Assume there is a foundation, but from there only place blocks on top of other valid blocks within the build.
-            Assume structures being requested need a roof unless otherwise stated.
-            Sort the blocks in the array so to minimize back-and-forth movement, and from the ground up.
-            Keep it appropriate for all audiences which includes young children.
-            If nothing can be built from the request, respond with an empty array like: []`,
+                    content: `You are a Minecraft building assistant. Given a natural language prompt, output an array of block placements to construct the requested structure.
+                        Rules:
+                        - All positions must be relative to origin (0,0,0).
+                        - Output ONLY a raw JSON array of objects in this format: { "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
+                        - Do NOT include explanations, quotes, markdown, or commentary.
+                        - Do NOT include air blocks or blocks below the foundation.
+                        - Assume a flat foundation exists; only place blocks *on top* of other blocks or the foundation.
+                        - If no structure can be reasonably built from the input, return an empty array: []
+                        - All structures must be family-friendly (suitable for young children).
+                        - Sort blocks from lowest Y to highest Y, and group nearby placements to reduce back-and-forth motion.
+
+                        Assume a roof is required unless the prompt clearly says otherwise.`,
                 },
                 {
                     role: 'user',
