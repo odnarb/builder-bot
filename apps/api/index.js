@@ -9,8 +9,10 @@ import 'dotenv/config.js';
 
 import {
     createUser,
+    createUsersBuild,
     getUserByEmail,
     getUserById,
+    updateUsersBuild,
     updateUserTier
 } from './core/firestore/users.js';
 
@@ -111,7 +113,7 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
 
         await createUser({ user });
 
-        return res.send(200);
+        return res.status(200).json({ success: true });
     } catch (err) {
         console.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
@@ -136,6 +138,67 @@ app.post('/user/plan', jwtCheck, async (req, res) => {
     } catch (err) {
         console.error('❌ Tier update failed:', err);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+app.post('/user/build', jwtCheck, async (req, res) => {
+    const { build } = req.body
+    const userId = req.auth?.sub;
+
+    if (!userId || !build) {
+        return res.status(400).json({ error: 'Missing userId or build' });
+    }
+
+    try {
+        const newBuild = {
+            ...build,
+            createdAt: new Date().toISOString()
+        }
+
+        const docRef = await createUsersBuild({ build: newBuild });
+
+        return res.send(200).json({ buildId: docRef.id });
+    } catch (err) {
+        console.error(`❌ Failed to create user build for userId ${userId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
+    const { build } = req.body
+    const userId = req.auth?.sub;
+    const buildId = req.params.buildId;
+
+    if (!userId || !build || !buildId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, or build' });
+    }
+
+    try {
+        await updateUsersBuild({ userId, buildId, build });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to update user build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
+    const { steps } = req.body
+    const userId = req.auth?.sub;
+    const buildId = req.params.buildId;
+
+    if (!userId || !steps || !buildId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, or steps' });
+    }
+
+    try {
+        await addstepsToUsersBuild({ userId, buildId, steps });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
     }
 });
 
