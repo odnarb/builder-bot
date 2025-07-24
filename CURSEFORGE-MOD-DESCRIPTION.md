@@ -24,8 +24,6 @@ Unlock premium features with a subscription:
 - 📈 Priority support
 - Discord integration
 
-Upgrade anytime at: **[https://mcbuilderbot.com](https://mcbuilderbot.com)**
-
 > The free version is fully functional and gives you access to the AI system. No features are locked behind a paywall — premium upgrades are optional for larger-scale builds and extended features.
 
 ---
