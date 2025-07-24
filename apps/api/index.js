@@ -8,8 +8,10 @@ import jwtCheck from './middleware/auth0-jwt-check.js';
 import 'dotenv/config.js';
 
 import {
+    addLogEntryToUsersSession,
     createUser,
     createUsersBuild,
+    createUsersSession,
     getUserByEmail,
     getUserById,
     updateUsersBuild,
@@ -198,6 +200,51 @@ app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
         return res.status(200).json({ success: true });
     } catch (err) {
         console.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
+    const { session } = req.body
+    const userId = req.auth?.sub;
+    const sessionId = req.params.sessionId;
+
+    if (!userId || !session || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, sessionId, or session' });
+    }
+
+    const sessionStart = {
+        ...session,
+        createdAt: new Date().toISOString()
+    }
+
+    try {
+        await createUsersSession({ userId, sessionId, sessionStart });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
+    const { log } = req.body
+    const userId = req.auth?.sub;
+    const sessionId = req.params.sessionId;
+
+    if (!userId || !log || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, sessionId, or log' });
+    }
+
+    const logWithTime = { ...log, timestamp: new Date().toISOString() };
+
+    try {
+        await addLogEntryToUsersSession({ userId, sessionId, log: logWithTime });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to add log entry for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
 });

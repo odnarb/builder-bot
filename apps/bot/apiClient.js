@@ -73,3 +73,37 @@ export async function uploadBuildSteps({ buildId, steps }) {
     return res.json();
 }
 
+// Add log entry
+export async function addLogEntry({ log }) {
+    if (!log) {
+        throw new Error('Missing log');
+    }
+
+    const res = await fetch(`${API_URL}/api/user/session/${SESSION_ID}/log`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ log }),
+    });
+
+    if (!res.ok) return handleApiError(res, 'Add log entry');
+
+    return res.json();
+}
+
+// Create session
+export async function createSession({ session }) {
+    if (!session) {
+        throw new Error('Missing session');
+    }
+
+    const res = await fetch(`${API_URL}/api/user/session/${SESSION_ID}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ session }),
+    });
+
+    if (!res.ok) return handleApiError(res, 'Create session');
+
+    return res.json();
+}
+

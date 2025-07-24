@@ -78,3 +78,15 @@ export async function addstepsToUsersBuild({ userId, buildId, steps }) {
     return true;
 }
 
+export async function createUsersSession({ userId, sessionId, sessionStart }) {
+    return db.collection('users').doc(userId)
+        .collection('sessions').doc(sessionId)
+        .set(sessionStart)
+}
+
+export async function addLogEntryToUsersSession({ userId, sessionId, log }) {
+    return db.collection('users').doc(userId)
+        .collection('sessions').doc(sessionId)
+        .collection('logs')
+        .add(log)
+}
