@@ -6,6 +6,9 @@ import { startBotServer } from './ws-server.js';
 import { handlePlayerCommand } from './command-router.js';
 import { addLogEntry, createSession, getUserTier } from './apiClient.js';
 
+//current user info
+const COMMANDER_UUID = process.env.COMMANDER_UUID
+
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
 const MC_HOST_PORT = process.env.MC_HOST_PORT || 25565
@@ -14,14 +17,18 @@ const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
 //bot's name
 const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
 
+//for disallowing multiple commands to be in flight
+let handlingCommand = false
+
 //start the session on the backend for logging
 await createSession({
-  USER_ID,
-  COMMANDER_UUID,
-  MC_HOST_IP,
-  MC_HOST_PORT,
-  MC_HOST_VERSION,
-  BOT_NAME
+  session: {
+    commanderUUID: COMMANDER_UUID,
+    hostIp: MC_HOST_IP,
+    hostPort: MC_HOST_PORT,
+    hostVersion: MC_HOST_VERSION,
+    botName: BOT_NAME
+  }
 })
 
 //Get user tier information before starting bot
@@ -81,12 +88,35 @@ bot.on('chat', async (username, message) => {
 
     addLogEntry({ type: "chat", message, from: username, level: 0 })
 
-    await handlePlayerCommand({ commander, bot, message: finalMessage, username });
+    //TODO: update state that lets the webUI know so that commands can't be spammed
+    handlingCommand = true
+
+    if (!handlingCommand) {
+      await handlePlayerCommand({ commander, bot, message: finalMessage, username });
+    } else {
+      bot.chat(`Sorry, I'm currently busy with the previous command.`)
+    }
+
+    handlingCommand = false
   } catch (error) {
     console.error(`Could not process command. ${error.stack}`)
   }
 });
 
-bot.on('error', (err) => {
+bot.on('error', async (err) => {
   console.log(`Got error from bot: ${err.stack}`)
+  await addLogEntry({ type: "error", message: 'Got error from bot', data: err.stack, level: 2 })
+  process.exit(-1)
 })
+
+bot.on('kicked', async (reason, loggedIn) => {
+  console.log(`Bot kicked:`, reason);
+  await addLogEntry({ type: "error", message: 'Bot kicked from server', data: { reason, loggedIn }, level: 1 })
+  process.exit(0)
+})
+
+bot.on('end', async (reason) => {
+  console.log(`Bot disconnected..`, reason);
+  await addLogEntry({ type: "error", message: 'Bot disconnected from server', data: { reason }, level: 1 })
+  process.exit(0)
+});
