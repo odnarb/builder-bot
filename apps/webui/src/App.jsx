@@ -65,7 +65,7 @@ export default function App() {
           }),
         });
 
-        const res = await fetch(`/api/user/tier?email=${user.email}`, {
+        const res = await fetch(`/api/user/tier`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
