@@ -1,7 +1,7 @@
 // ai-agent.js
 
 // 🧠 Ask ChatGPT for block structure
-export async function getStructureFromAI(message) {
+export async function getBlocksAndTagsFromAI(message) {
   const res = await fetch(`${process.env.API_URL}/api/ai-get-structure`, {
     method: 'POST',
     headers: {
@@ -12,5 +12,5 @@ export async function getStructureFromAI(message) {
   });
 
   const data = await res.json();
-  return data.structure;
+  return data.blocksAndTags;
 }

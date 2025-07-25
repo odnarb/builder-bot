@@ -382,16 +382,26 @@ app.post('/ai-get-structure', async (req, res) => {
             messages: [
                 {
                     role: 'system',
-                    content: `You are a Minecraft building assistant. Given a natural language prompt, output an array of block placements to construct the requested structure.
+                    content: `You are a Minecraft building assistant. Given a natural language prompt, output two things:
+                        1. A JSON array of block placements to construct the requested structure.
+                        2. A JSON array of string tags that describe the structure (e.g., "house", "modern", "roof", "glass", "farm", "castle").
+
                         Rules:
                         - All positions must be relative to origin (0,0,0).
-                        - Output ONLY a raw JSON array of objects in this format: { "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
-                        - Do NOT include explanations, quotes, markdown, or commentary.
+                        - Output ONLY raw JSON. Do NOT include explanations, markdown, or commentary.
+                        - Output format:
+                        {
+                        "blocks": [ 
+                            { "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" },
+                            ...
+                        ],
+                        "tags": ["house", "wood", "roof", "modern"]
+                        }
+
                         - Do NOT include air blocks or blocks below the foundation.
                         - Assume a flat foundation exists; only place blocks *on top* of other blocks or the foundation.
-                        - If no structure can be reasonably built from the input, return an empty array: []
                         - All structures must be family-friendly (suitable for young children).
-                        - Sort blocks from lowest Y to highest Y, and group nearby placements to reduce back-and-forth motion.
+                        - Sort blocks from lowest Y to highest Y to optimize motion.
 
                         Assume a roof is required unless the prompt clearly says otherwise.`,
                 },
@@ -402,8 +412,8 @@ app.post('/ai-get-structure', async (req, res) => {
             ],
         });
 
-        const structure = chat.choices[0].message.content.trim();
-        res.json({ structure });
+        const blocksAndTags = chat.choices[0].message.content.trim();
+        res.json({ blocksAndTags });
     } catch (err) {
         console.error('❌ AI structure error:', err);
         res.status(500).json({ error: 'Failed to generate structure' });

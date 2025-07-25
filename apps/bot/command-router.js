@@ -3,7 +3,7 @@ const { goals } = pkg;
 
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
-import { getStructureFromAI } from '../cli/ai-agent.js';
+import { getStructureAndTagsFromAI } from '../cli/ai-agent.js';
 
 const USAGE_TIER_NAMES = {
   FREE: 'free',
@@ -152,31 +152,35 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     let steps = []
 
     //get the build steps from the AI
-    const rawSteps = await getStructureFromAI(prompt)
+    const rawSteps = await getStructureAndTagsFromAI(prompt)
 
     try {
-      steps = JSON.parse(rawSteps)
-
-      const build = {
-        event: "steps_parsed",
-        blockCount: steps.length,
-      }
-
-      await updateUserBuild({ buildId, build })
-
+      const { blocks, tags } = JSON.parse(rawSteps)
+      steps = blocks
     } catch (error) {
       steps = []
       bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
 
       //log the build error to the server
-      const build = {
-        error: error.stack,
-        error_message: error.message
-      }
-      await updateUserBuild({ buildId, build })
+      await updateUserBuild({
+        buildId,
+        build: {
+          error: error.stack,
+          error_message: error.message
+        }
+      })
 
       console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
     }
+
+    await updateUserBuild({
+      buildId,
+      build: {
+        event: "steps_parsed",
+        blockCount: steps.length,
+        tags
+      }
+    })
 
     bot.chat(`💾 Saving build steps...`);
 
