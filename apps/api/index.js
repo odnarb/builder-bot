@@ -41,21 +41,14 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 app.get('/user/tier', jwtCheck, async (req, res) => {
-    const email = req.query.email;
-    const userId = req.query.userId;
+    const userId = req.auth.payload.sub;
 
-    if (!email && !userId) {
-        return res.status(400).json({ error: 'email or userId is required' });
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
     }
 
-    let user
-
     try {
-        if (email) {
-            user = await getUserByEmail({ email });
-        } else {
-            user = await getUserById({ userId });
-        }
+        const user = await getUserById({ userId });
 
         if (!user) {
             return res.json({ tier: 'pending', exists: false });
@@ -63,7 +56,7 @@ app.get('/user/tier', jwtCheck, async (req, res) => {
 
         return res.json({ tier: user.tier || 'free' });
     } catch (err) {
-        console.error(`❌ Failed to fetch tier for ${email}: ${err.stack}`);
+        console.error(`❌ Failed to fetch tier for ${userId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
 });
@@ -147,7 +140,7 @@ app.post('/user/plan', jwtCheck, async (req, res) => {
 
 app.post('/user/build', jwtCheck, async (req, res) => {
     const { build } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
 
     if (!userId || !build) {
         return res.status(400).json({ error: 'Missing userId or build' });
@@ -180,7 +173,7 @@ app.post('/user/build', jwtCheck, async (req, res) => {
 
 app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
     const { build } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
 
     if (!userId || !build || !buildId) {
@@ -209,7 +202,7 @@ app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
 
 app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
     const { steps } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
 
     if (!userId || !steps || !buildId) {
@@ -237,7 +230,7 @@ app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
 
 app.post('/user/build/:buildId/logs', jwtCheck, async (req, res) => {
     const { logs } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
 
     if (!userId || !logs || !buildId) {
@@ -265,7 +258,7 @@ app.post('/user/build/:buildId/logs', jwtCheck, async (req, res) => {
 
 app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
     const { session } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
 
     if (!userId || !session || !sessionId) {
@@ -289,7 +282,7 @@ app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
 
 app.put('/user/session/:sessionId', jwtCheck, async (req, res) => {
     const { session } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
 
     if (!userId || !session || !sessionId) {
@@ -313,7 +306,7 @@ app.put('/user/session/:sessionId', jwtCheck, async (req, res) => {
 
 app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
     const { log } = req.body
-    const userId = req.auth?.sub;
+    const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
 
     if (!userId || !log || !sessionId) {
@@ -443,7 +436,6 @@ app.post('/ai-get-structure', async (req, res) => {
         res.status(500).json({ error: 'Failed to generate structure' });
     }
 });
-
 
 app.get('/', (req, res) => {
     res.send('✅ API is running');
