@@ -13,17 +13,48 @@ const USAGE_TIER_NAMES = {
 };
 
 const USAGE_TIERS = {
-  FREE: { maxBlocks: 100, allowCustomChat: false },
-  STARTER: { maxBlocks: 500 },
-  PRO: { maxBlocks: 2000, allowCustomChat: true },
-  ADMIN: { maxBlocks: Infinity }
+  FREE: {
+    maxBlocks: 100,
+    maxPromptChars: 80,
+    maxPromptWords: 30,
+  },
+  STARTER: {
+    maxBlocks: 500,
+    maxPromptChars: 250,
+    maxPromptWords: 50,
+  },
+  PRO: {
+    maxBlocks: 2000,
+    maxPromptChars: 1000,
+    maxPromptWords: 150,
+  },
+  ADMIN: {
+    maxBlocks: Infinity,
+    maxPromptChars: 2000,
+    maxPromptWords: 250,
+  }
 };
 
-function overTierLimit({ commander, numBlocks }) {
+function overTierBlockLimit({ commander, numBlocks }) {
   return (commander.tier === USAGE_TIER_NAMES.FREE && numBlocks > USAGE_TIERS.FREE.maxBlocks ||
     commander.tier === USAGE_TIER_NAMES.STARTER && numBlocks > USAGE_TIERS.STARTER.maxBlocks ||
     commander.tier === USAGE_TIER_NAMES.PRO && numBlocks > USAGE_TIERS.PRO.maxBlocks ||
     commander.tier === USAGE_TIER_NAMES.ADMIN && numBlocks > USAGE_TIERS.ADMIN.maxBlocks
+  )
+}
+
+function overTierPromptLimit({ commander, prompt }) {
+  const numWords = prompt.trim().split(/\s+/).length
+  const numChars = prompt.length
+  return (
+    commander.tier === USAGE_TIER_NAMES.FREE && numWords > USAGE_TIERS.FREE.maxPromptWords ||
+    commander.tier === USAGE_TIER_NAMES.FREE && numChars > USAGE_TIERS.FREE.maxPromptChars ||
+    commander.tier === USAGE_TIER_NAMES.STARTER && numWords > USAGE_TIERS.STARTER.maxPromptWords ||
+    commander.tier === USAGE_TIER_NAMES.STARTER && numChars > USAGE_TIERS.STARTER.maxPromptChars ||
+    commander.tier === USAGE_TIER_NAMES.PRO && numWords > USAGE_TIERS.PRO.maxPromptWords ||
+    commander.tier === USAGE_TIER_NAMES.PRO && numChars > USAGE_TIERS.PRO.maxPromptChars ||
+    commander.tier === USAGE_TIER_NAMES.ADMIN && numWords > USAGE_TIERS.ADMIN.maxPromptWords ||
+    commander.tier === USAGE_TIER_NAMES.ADMIN && numChars > USAGE_TIERS.ADMIN.maxPromptChars
   )
 }
 
@@ -84,6 +115,27 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
   if (msg.startsWith('build ')) {
     const prompt = msg.slice(6);
+
+    //check prompt before submitting
+    if (overTierPromptLimit({ commander, prompt })) {
+      bot.chat(`❌ Sorry, your prompt is too long for your tier "${commander.tier}"...`);
+      console.warn(`⚠️ Prompt exceeded limits for tier "${commander.tier}". prompt length:${prompt.length} chars`);
+
+      addLogEntry({
+        type: "prompt_tier_limit",
+        message: "user",
+        data: {
+          tier: commander.tier,
+          prompt,
+          charCount: prompt.length,
+          wordCount: prompt.trim().split(/\s+/).length,
+        },
+        level: 1
+      })
+
+      return
+    }
+
     bot.chat(`📐 Asking AI to generate build for: ${prompt}...`);
     console.log(`📐 Asking AI to generate build for: ${prompt}...`);
 
@@ -133,12 +185,12 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
     if (steps.length > 0) {
       //check build size, if user's tier too low, reject it
-      if (overTierLimit({ commander, numBlocks: steps.length })) {
+      if (overTierBlockLimit({ commander, numBlocks: steps.length })) {
         bot.chat(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
         console.log(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
 
         //user hit tier limit, log this
-        addLogEntry({ type: "tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 0 })
+        addLogEntry({ type: "block_tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 1 })
 
         return
       }
