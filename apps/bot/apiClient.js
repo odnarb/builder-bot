@@ -1,6 +1,6 @@
 const API_URL = process.env.API_URL;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
-const USER_ID = process.env.USER_ID;
+const SESSION_ID = process.env.SESSION_ID;
 
 function authHeaders() {
     return {
@@ -17,7 +17,7 @@ function handleApiError(res, context = '') {
 
 // Get user tier
 export async function getUserTier() {
-    const res = await fetch(`${API_URL}/api/user/tier?userId=${encodeURIComponent(USER_ID)}`, {
+    const res = await fetch(`${API_URL}/api/user/tier`, {
         headers: authHeaders(),
     });
 
@@ -126,14 +126,18 @@ export async function createSession({ session }) {
 }
 
 // End session
-export async function endSession({ session }) {
+// This is special because all the vars are coming from outside the bot process and therefore have no process.env context
+export async function endSession({ envVars, session }) {
     if (!session) {
         throw new Error('Missing session');
     }
 
-    const res = await fetch(`${API_URL}/api/user/session/${SESSION_ID}`, {
+    const res = await fetch(`${envVars.API_URL}/api/user/session/${envVars.SESSION_ID}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${envVars.AUTH_TOKEN}`,
+        },
         body: JSON.stringify({ session }),
     });
 

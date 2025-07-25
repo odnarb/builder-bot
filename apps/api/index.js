@@ -16,6 +16,7 @@ import {
     getUserByEmail,
     getUserById,
     updateUsersBuild,
+    updateUsersSession,
     updateUserTier
 } from './core/firestore/users.js';
 import { Timestamp } from '@google-cloud/firestore';

@@ -1,6 +1,6 @@
 import Vec3 from 'vec3';
 import pkg from 'mineflayer-pathfinder';
-import { updateUserBuild } from './apiClient';
+import { updateUserBuild } from './apiClient.js';
 const { goals } = pkg;
 
 export async function executeCommands({ bot, commands }) {
