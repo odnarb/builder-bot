@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { endSession } from '../bot/apiClient';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,6 +13,7 @@ function createWindow() {
         autoHideMenuBar: true,
         width: 1200,
         height: 800,
+        frame: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'), // ✅ Point here
             contextIsolation: true,
@@ -26,11 +28,13 @@ app.whenReady().then(createWindow);
 
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
+    let SESSION_ID = crypto.randomUUID()
+
     const envVars = {
         //TODO: UPDATE THIS TO PROD VS DEV
         API_URL: 'http://localhost:3001',
         // when launching, create an env var as the session id to save builds and chats to
-        SESSION_ID: crypto.randomUUID(),
+        SESSION_ID,
         AUTH_TOKEN: env.authToken,
         USER_ID: env.userId,
         COMMANDER_UUID: env.commanderUUID,
@@ -47,7 +51,19 @@ ipcMain.on('launch-bot', (event, env) => {
         stdio: 'inherit'
     });
 
-    botProcess.on('close', code => {
+    botProcess.on('close', async (code) => {
         console.log(`👋 Bot process exited with code ${code}`);
+        await endSession({ sessionId: SESSION_ID, session: { exit_code: code } })
+    });
+
+    botProcess.on('error', async (err) => {
+        console.log(`❌ Bot process error ${err.stack}`);
+        //record session end and timestamp
+        const session = {
+            error: err.stack,
+            error_message: error.message,
+            exit_code: -1
+        }
+        await endSession({ sessionId: SESSION_ID, session })
     });
 });

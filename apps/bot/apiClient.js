@@ -124,3 +124,20 @@ export async function createSession({ session }) {
 
     return res.json();
 }
+
+// End session
+export async function endSession({ session }) {
+    if (!session) {
+        throw new Error('Missing session');
+    }
+
+    const res = await fetch(`${API_URL}/api/user/session/${SESSION_ID}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ session }),
+    });
+
+    if (!res.ok) return handleApiError(res, 'End session');
+
+    return res.json();
+}

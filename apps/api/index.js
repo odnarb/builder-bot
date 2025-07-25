@@ -287,6 +287,30 @@ app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
     }
 });
 
+app.put('/user/session/:sessionId', jwtCheck, async (req, res) => {
+    const { session } = req.body
+    const userId = req.auth?.sub;
+    const sessionId = req.params.sessionId;
+
+    if (!userId || !session || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, sessionId, or session' });
+    }
+
+    const sessionWithTimestamp = {
+        ...session,
+        updatedAt: Timestamp.now()
+    }
+
+    try {
+        await updateUsersSession({ userId, sessionId, session: sessionWithTimestamp });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
 app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
     const { log } = req.body
     const userId = req.auth?.sub;

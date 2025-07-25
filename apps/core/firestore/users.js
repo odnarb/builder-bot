@@ -113,6 +113,12 @@ export async function createUsersSession({ userId, sessionId, sessionStart }) {
         .set(sessionStart)
 }
 
+export async function updateUsersSession({ userId, sessionId, session }) {
+    return db.collection('users').doc(userId)
+        .collection('sessions').doc(sessionId)
+        .set(session, { merge: true })
+}
+
 export async function addLogEntryToUsersSession({ userId, sessionId, log }) {
     return db.collection('users').doc(userId)
         .collection('sessions').doc(sessionId)
