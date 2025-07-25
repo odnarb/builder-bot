@@ -1,17 +1,21 @@
 import Vec3 from 'vec3';
 import pkg from 'mineflayer-pathfinder';
+import { updateUserBuild } from './apiClient';
 const { goals } = pkg;
 
-export async function executeCommands(bot, commands, onProgress = () => { }) {
+export async function executeCommands({ bot, commands }) {
+  const stepsLog = []
+  let buildSuccess = false
+
   for (const step of commands) {
     if (step.type === 'move_to') {
       const goal = new goals.GoalBlock(step.x, step.y, step.z);
       bot.pathfinder.setGoal(goal);
-      onProgress({ type: 'moving_to', ...step });
+      stepsLog.push({ type: 'moving_to', ...step })
 
       await new Promise(resolve => {
         bot.once('goal_reached', () => {
-          onProgress({ type: 'goal_reached', ...step });
+          stepsLog.push({ type: 'goal_reached', ...step })
           resolve();
         });
       });
@@ -23,11 +27,14 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
       // Give item if missing
       if (!item) {
         console.log(`📦 Missing ${step.block}, attempting to give...`);
+        stepsLog.push({ type: 'missing_block', warning: `Missing ${step.block}, attempting to give...`, ...step });
+
         try {
           if (bot.creative?.give) {
             await bot.creative.give(bot.registry.itemsByName[step.block].id, 999);
             item = bot.inventory.items().find(i => i.name === step.block);
-            console.log(`✅ Gave 64 of ${step.block}`);
+            console.log(`✅ Gave 999 of ${step.block}`);
+            stepsLog.push({ type: 'gave_block', message: `Gave 64 of ${step.block}`, ...step });
           } else {
             bot.chat(`/give ${bot.username} minecraft:${step.block} 999`);
             let retries = 0;
@@ -37,10 +44,12 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
               retries++;
             }
             console.log(`✅ Requested ${step.block} via /give`);
+            stepsLog.push({ type: 'requested_give_block', message: `Requested ${step.block} via /give`, ...step });
           }
         } catch (giveErr) {
           console.warn(`❌ Failed to give ${step.block}: ${giveErr.message}`);
-          onProgress({ type: 'error', error: 'Failed to give block', ...step });
+          stepsLog.push({ type: 'error', error: 'Failed to give block', ...step });
+          buildSuccess = false
           continue;
         }
       }
@@ -59,8 +68,11 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
             await bot.equip(bot.inventory.items().find(i => i.name === 'cobblestone'), 'hand');
             await bot.placeBlock(ref, new Vec3(0, 1, 0));
             console.log(`🧱 Foundation placed at ${pos.offset(0, -1, 0)}`);
+            stepsLog.push({ type: 'foundation_placed', error: `Foundation placed at ${pos.offset(0, -1, 0)}`, ...step });
           } catch (err) {
             console.warn(`⚠️ Failed to place foundation: ${err.message}`);
+            stepsLog.push({ type: 'error', error: 'Failed to place foundation', ...step });
+            buildSuccess = false
           }
         }
       }
@@ -95,7 +107,7 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
           if (isStandingInBlock) {
             const backup = new goals.GoalGetToBlock(pos.x, pos.y, pos.z, 1);
             console.log(`🚶 Moving away from placement target: ${pos}`);
-            onProgress({ type: 'moving_to', reason: 'standing_on_target', ...step });
+            stepsLog.push({ type: 'moving_to', reason: 'standing_on_target', ...step });
             await bot.pathfinder.goto(backup);
           }
 
@@ -111,29 +123,43 @@ export async function executeCommands(bot, commands, onProgress = () => { }) {
           const existingBlock = bot.blockAt(pos);
           if (existingBlock && existingBlock.name === step.block) {
             console.log(`⏭️ ${step.block} already present at ${pos}`);
-            onProgress({ type: 'block_already_exists', block: step.block, ...step });
+            stepsLog.push({ type: 'block_already_exists', block: step.block, ...step });
             continue;
           }
 
           await bot.placeBlock(refBlock, offset.scaled(-1));
           console.log(`✅ Placed ${step.block} at ${pos}`);
-          onProgress({ type: 'block_placed', block: step.block, ...step });
+          stepsLog.push({ type: 'block_placed', block: step.block, ...step });
           placed = true;
           break;
         } catch (err) {
           console.warn(`⚠️ Failed to place at ${pos} using face ${offset}: ${err.message}`);
+          stepsLog.push({ type: 'error', error: 'Failed to place at ${pos} using face ${offset}: ${err.message}', ...step });
+          buildSuccess = false
         }
       } //end for
 
       if (!placed) {
         console.warn(`❌ Could not place ${step.block} at ${pos} — no valid support`);
-        onProgress({ type: 'error', error: 'No valid adjacent block to place against', ...step });
+        stepsLog.push({ type: 'error', error: 'No valid adjacent block to place against', ...step });
       }
     } else {
       console.warn('⚠️ Unknown instruction:', step);
+      stepsLog.push({ type: 'error', error: 'Unknown instruction', ...step });
+      buildSuccess = false
     }
   } //end comands set
 
   bot.chat(`📐 Build complete!`);
   console.log(`📐 Build complete!`);
+
+  //update build success
+  const build = {
+    success: buildSuccess
+  }
+  //update the final build
+  await updateUserBuild({ buildId, build })
+
+  //update build steps and their
+  await uploadBuildLogs({ buildId, logs })
 }

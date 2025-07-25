@@ -1,12 +1,9 @@
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
-import { parsePrompt } from '../../packages/prompt-parser/index.js';
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
 import { getStructureFromAI } from '../cli/ai-agent.js';
-
-import { addChatLogEntry } from './apiClient.js';
 
 const USAGE_TIER_NAMES = {
   FREE: 'free',
@@ -47,7 +44,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       );
       bot.pathfinder.setGoal(goal);
 
-      addMoveLogEntry({ data: JSON.stringify(goal) })
+      addLogEntry({ type: "command", message: "move to", data: JSON.stringify(goal), level: 0 })
 
       bot.chat("On my way!");
     } else {
@@ -63,7 +60,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           const goal = new goals.GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
           bot.pathfinder.setGoal(goal);
 
-          addMoveLogEntry({ data: JSON.stringify(goal) })
+          addLogEntry({ type: "command", message: "move to specific x,y,z", data: JSON.stringify(goal), level: 0 })
 
           bot.chat("On my way! This might take a while...");
         } else {
@@ -80,67 +77,85 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     bot.pathfinder.setGoal(null);
     bot.chat("Okay, stopped.");
 
-    addStopLogEntry({ data: JSON.stringify(goal) })
+    addLogEntry({ type: "command", message: "stop", data: bot.entity.position.floored(), level: 0 })
 
     return;
   }
 
   if (msg.startsWith('build ')) {
     const prompt = msg.slice(6);
-    bot.chat(`📐 Building: ${prompt}`);
-    console.log(`📐 Building: ${prompt}`);
+    bot.chat(`📐 Asking AI to generate build for: ${prompt}...`);
+    console.log(`📐 Asking AI to generate build for: ${prompt}...`);
+
+    const build = {
+      type: "build",
+      commanderUUID: process.env.COMMANDER_UUID,
+      message: prompt,
+      level: 0
+    }
+
+    //start the build and log an id
+    const buildId = await createUserBuild({ build })
 
     let steps = []
 
-    //first try parsing to ste steps
-    steps = parsePrompt(prompt)
+    //get the build steps from the AI
+    const rawSteps = await getStructureFromAI(prompt)
 
-    if (steps.length === 0) {
-      //get the build steps from the AI
-      const rawSteps = await getStructureFromAI(prompt) // from ai-agent.js
+    try {
+      steps = JSON.parse(rawSteps)
 
-      try {
-        steps = JSON.parse(rawSteps)
-
-      } catch (error) {
-        steps = []
-        console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
+      const build = {
+        event: "steps_parsed",
+        blockCount: steps.length,
       }
+
+      await updateUserBuild({ buildId, build })
+
+    } catch (error) {
+      steps = []
+      bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
+
+      //log the build error to the server
+      const build = {
+        error: error.stack,
+        error_message: error.message
+      }
+      await updateUserBuild({ buildId, build })
+
+      console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
     }
+
+    bot.chat(`💾 Saving build steps...`);
+
+    //save steps to backend, later
+    await uploadBuildSteps({ buildId, steps })
 
     if (steps.length > 0) {
       //check build size, if user's tier too low, reject it
       if (overTierLimit({ commander, numBlocks: steps.length })) {
-        bot.chat(`⚠️ Commander's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
-        console.log(`⚠️ Commander's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
+        bot.chat(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
+        console.log(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
+
+        //user hit tier limit, log this
+        addLogEntry({ type: "tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 0 })
+
         return
       }
 
       // adjust our steps to be relative to the bot's position
       const adjustedCommands = offsetStructure(steps, { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, { x: 2, y: 0, z: 2 });
 
-      //disable, the AI should be doing this
-      //sort commands by height -- disallow floating blocks
-      // adjustedCommands.sort((a, b) => a.y - b.y);
-
       //clear the inventory first before a build
       await bot.creative.clearInventory()
 
       //finalize the command set
-      await executeCommands(bot, adjustedCommands, (event) => {
-        if (event.type === 'block_placed') {
-          // don't spam the server
-          // bot.chat(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-          console.log(`✅ Placed ${event.block} at (${event.x}, ${event.y}, ${event.z})`);
-        } else if (event.type === 'error') {
-          // don't spam the server
-          // bot.chat(`❌ Could not place block. ${event.error}`);
-          console.log(`❌ Failed: ${event.error}`);
-        }
-      });
+      await executeCommands({ bot, commands: adjustedCommands });
     } else {
-      bot.chat(`❌ I couldn't understand how to build that. Try something simpler like "build a cube" or "build a house".`);
+      bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
       console.log(`❌ No structure received from AI or failed to parse`);
+
+      await updateUserBuild({ buildId, build: { error: "build steps array empty" } })
     }
 
     return;

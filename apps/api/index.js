@@ -9,6 +9,7 @@ import 'dotenv/config.js';
 
 import {
     addLogEntryToUsersSession,
+    addStepsToUsersBuild,
     createUser,
     createUsersBuild,
     createUsersSession,
@@ -17,6 +18,7 @@ import {
     updateUsersBuild,
     updateUserTier
 } from './core/firestore/users.js';
+import { Timestamp } from '@google-cloud/firestore';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-04-10',
@@ -110,7 +112,7 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
             name,
             auth0LoginId,
             picture, tier: 'pending',
-            createdAt: new Date().toISOString()
+            createdAt: Timestamp.now()
         }
 
         await createUser({ user });
@@ -154,10 +156,20 @@ app.post('/user/build', jwtCheck, async (req, res) => {
     try {
         const newBuild = {
             ...build,
-            createdAt: new Date().toISOString()
+            createdAt: Timestamp.now()
         }
-
         const docRef = await createUsersBuild({ build: newBuild });
+
+        //add the log entry
+        const log = {
+            type: "creating_build",
+            data: {
+                buildId: docRef.id,
+                ...build
+            },
+            timestamp: Timestamp.now()
+        };
+        await addLogEntryToUsersSession({ userId, sessionId, log });
 
         return res.send(200).json({ buildId: docRef.id });
     } catch (err) {
@@ -176,6 +188,16 @@ app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
     }
 
     try {
+        const log = {
+            type: "updating_build",
+            data: {
+                buildId,
+                ...build
+            },
+            timestamp: Timestamp.now()
+        };
+        await addLogEntryToUsersSession({ userId, sessionId, log });
+
         await updateUsersBuild({ userId, buildId, build });
 
         return res.status(200).json({ success: true });
@@ -195,11 +217,48 @@ app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
     }
 
     try {
-        await addstepsToUsersBuild({ userId, buildId, steps });
+        const log = {
+            type: "saving_build_steps",
+            data: {
+                buildId,
+                steps: steps.length
+            },
+            timestamp: Timestamp.now()
+        };
+        await addLogEntryToUsersSession({ userId, sessionId, log });
+        await addStepsToUsersBuild({ userId, buildId, steps });
 
         return res.status(200).json({ success: true });
     } catch (err) {
         console.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+app.post('/user/build/:buildId/logs', jwtCheck, async (req, res) => {
+    const { logs } = req.body
+    const userId = req.auth?.sub;
+    const buildId = req.params.buildId;
+
+    if (!userId || !logs || !buildId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, or logs' });
+    }
+
+    try {
+        const log = {
+            type: "saving_build_logs",
+            data: {
+                buildId,
+                logs: logs.length
+            },
+            timestamp: Timestamp.now()
+        };
+        await addLogEntryToUsersSession({ userId, sessionId, log });
+        await addLogsToUsersBuild({ userId, buildId, logs });
+
+        return res.status(200).json({ success: true });
+    } catch (err) {
+        console.error(`❌ Failed to add logs to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
 });
@@ -215,7 +274,7 @@ app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
 
     const sessionStart = {
         ...session,
-        createdAt: new Date().toISOString()
+        createdAt: Timestamp.now()
     }
 
     try {
@@ -237,7 +296,7 @@ app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
         return res.status(400).json({ error: 'Missing userId, sessionId, or log' });
     }
 
-    const logWithTime = { ...log, timestamp: new Date().toISOString() };
+    const logWithTime = { ...log, timestamp: Timestamp.now() };
 
     try {
         await addLogEntryToUsersSession({ userId, sessionId, log: logWithTime });

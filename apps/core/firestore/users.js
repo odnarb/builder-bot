@@ -49,7 +49,7 @@ export async function updateUsersBuild({ userId, buildId, build }) {
         .set(build, { merge: true })
 }
 
-export async function addstepsToUsersBuild({ userId, buildId, steps }) {
+export async function addStepsToUsersBuild({ userId, buildId, steps }) {
     //loop through steps and commit batches to the db
     let batch = db.batch();
     let writeCount = 0;
@@ -61,6 +61,35 @@ export async function addstepsToUsersBuild({ userId, buildId, steps }) {
             .collection('steps').doc();
 
         batch.set(stepRef, steps[i]);
+        writeCount++;
+
+        if (writeCount === 500) {
+            await batch.commit();
+            batch = db.batch(); // reset for next chunk
+            writeCount = 0;
+        }
+    }
+
+    // Only commit the final batch if it has writes
+    if (writeCount > 0) {
+        await batch.commit();
+    }
+
+    return true;
+}
+
+export async function addLogsToUsersBuild({ userId, buildId, logs }) {
+    //loop through logs and commit batches to the db
+    let batch = db.batch();
+    let writeCount = 0;
+
+    for (let i = 0; i < logs.length; i++) {
+
+        const stepRef = db.collection('users').doc(userId)
+            .collection('builds').doc(buildId)
+            .collection('log').doc();
+
+        batch.set(stepRef, logs[i]);
         writeCount++;
 
         if (writeCount === 500) {
