@@ -3,7 +3,7 @@ import pkg from 'mineflayer-pathfinder';
 import { updateUserBuild } from './apiClient.js';
 const { goals } = pkg;
 
-export async function executeCommands({ bot, commands }) {
+export async function executeCommands({ bot, buildId, commands }) {
   const stepsLog = []
   let buildSuccess = false
 
