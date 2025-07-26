@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { WebSocketContext } from './WebSocketProvider';
 import LaunchBotModal from './LaunchBotModal';
@@ -8,10 +8,21 @@ export default function ControlPanel() {
   const { user, getAccessTokenSilently } = useAuth0();
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [authToken, setAuthToken] = useState(null);
+  const [botStatus, setBotStatus] = useState('idle'); // e.g. 'idle', 'launching', 'running', 'exited'
+
+  const isBotRunning = botStatus === 'running';
+  const isBotLaunching = botStatus === 'launching';
 
   const handleLaunchBot = (envVars) => {
     window.electronAPI?.launchBot?.(envVars);
   };
+
+  useEffect(() => {
+    window.electronAPI?.onBotStatus?.(({ status, code }) => {
+      console.log('⚙️ Bot status:', status);
+      setBotStatus(status); // update your UI button state here
+    });
+  }, []);
 
   const openModal = async () => {
     try {
@@ -26,6 +37,15 @@ export default function ControlPanel() {
 
   return (
     <div className="space-y-4 mt-4">
+      <div>
+        <button
+          onClick={openModal}
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+        >
+          🧠 Launch BuilderBot
+        </button>
+      </div>
+
       <div className="space-x-2">
         <button
           onClick={() => sendMessage({ type: "get_position" })}
@@ -53,15 +73,6 @@ export default function ControlPanel() {
           className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded"
         >
           Nearby Blocks
-        </button>
-      </div>
-
-      <div>
-        <button
-          onClick={openModal}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
-        >
-          🧠 Launch BuilderBot
         </button>
       </div>
 
