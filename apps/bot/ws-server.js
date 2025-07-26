@@ -128,8 +128,10 @@ export function startBotServer({ bot, commander }) {
         // 🧱 Instruction Array
         if (Array.isArray(message)) {
           console.log('📥 Received command sequence:', message);
-          await executeCommands(bot, message, (event) => {
-            ws.send(JSON.stringify(event));
+          await executeCommands({
+            bot, buildId, commands: message, onProgress: (event) => {
+              ws.send(JSON.stringify(event));
+            }
           });
           return;
         }

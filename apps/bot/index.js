@@ -7,7 +7,7 @@ import { handlePlayerCommand } from './command-router.js';
 import { addLogEntry, createSession, getUserTier } from './apiClient.js';
 
 //current user info
-const COMMANDER_UUID = process.env.COMMANDER_UUID
+const COMMANDER_UUID = process.env.COMMANDER_UUID || "123-123-1234"
 
 //minecraft server info
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'

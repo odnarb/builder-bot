@@ -15,6 +15,18 @@ function handleApiError(res, context = '') {
     });
 }
 
+// 🧠 Ask ChatGPT for block structure
+export async function getStructureAndTagsFromAI(message) {
+    const res = await fetch(`${process.env.API_URL}/api/ai-get-structure`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ message }),
+    });
+
+    const data = await res.json();
+    return data.blocksAndTags;
+}
+
 // Get user tier
 export async function getUserTier() {
     const res = await fetch(`${API_URL}/api/user/tier`, {

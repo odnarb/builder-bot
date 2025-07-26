@@ -3,8 +3,12 @@ const { goals } = pkg;
 
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { executeCommands } from './execute-commands.js';
-import { getStructureAndTagsFromAI } from '../cli/ai-agent.js';
-import { createUserBuild, updateUserBuild, uploadBuildSteps } from './apiClient.js';
+import {
+  createUserBuild,
+  updateUserBuild,
+  uploadBuildSteps,
+  getStructureAndTagsFromAI
+} from './apiClient.js';
 
 const USAGE_TIER_NAMES = {
   FREE: 'free',
@@ -207,8 +211,10 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       //clear the inventory first before a build
       await bot.creative.clearInventory()
 
+      bot.chat(`Attempting to build...`);
+
       //finalize the command set
-      await executeCommands({ bot, commands: adjustedCommands });
+      await executeCommands({ bot, buildId, commands: adjustedCommands });
     } else {
       bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
       console.log(`❌ No structure received from AI or failed to parse`);
