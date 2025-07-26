@@ -16,7 +16,7 @@ export function startBotServer({ bot, commander }) {
       try {
         const message = JSON.parse(rawData);
 
-        console.log('message: ', message);
+        console.log('message from WS: ', message);
 
         //DISABLE THIS FOR NOW
         //Update who the commander is in the game (player's UUID)
@@ -100,41 +100,8 @@ export function startBotServer({ bot, commander }) {
           return;
         }
 
-        if (message.type === 'raw_prompt') {
-          // You can route this to `ai-agent.js` or parsePrompt()
-          const structure = parsePrompt(message.prompt); // or runAgent()
+        console.log('WS message not routed: ', message);
 
-          if (!structure || !Array.isArray(structure)) {
-            console.warn("❌ Invalid structure from prompt");
-            return;
-          }
-
-          console.log("🧠 Executing structure from prompt:", message.prompt);
-          // Then run the same logic to handle move/build
-        }
-
-        // 🧱 Instruction Array (move_to and build)
-        const commands = message;
-
-        console.log('commands: ', commands);
-
-        if (!Array.isArray(commands) || commands.length === 0) {
-          console.warn('⚠️ Received empty or malformed command array');
-          return;
-        }
-
-        console.log('📥 Received command sequence with', commands.length, 'steps');
-
-        // 🧱 Instruction Array
-        if (Array.isArray(message)) {
-          console.log('📥 Received command sequence:', message);
-          await executeCommands({
-            bot, buildId, commands: message, onProgress: (event) => {
-              ws.send(JSON.stringify(event));
-            }
-          });
-          return;
-        }
       } catch (err) {
         console.error('❌ Error parsing message:', err.stack);
       }
