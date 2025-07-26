@@ -22,7 +22,9 @@ function Dashboard({ user, logout, tier }) {
     <WebSocketProvider>
       <div className="min-h-screen bg-gray-950 text-white p-6 space-y-4">
         <div className="flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-green-400">🧠 Minecraft AI Agent Dashboard</h1>
+          <h1 className="flex items-center text-2xl font-bold text-green-400 gap-2">
+            <img src='src/logo.png' width={64} alt='BquilderBot' /> BuilderBot Dashboard
+          </h1>
           <div>
             <span className="mr-4">
               👤 {user?.name}
