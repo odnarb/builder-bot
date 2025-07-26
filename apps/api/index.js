@@ -31,6 +31,10 @@ const app = express();
 
 app.use(bodyParser.json());
 
+const asyncHandler = fn => (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+};
+
 //rewrite urls from /api to /
 if (process.env.NODE_ENV !== 'production') {
     app.use((req, res, next) => {
@@ -41,7 +45,7 @@ if (process.env.NODE_ENV !== 'production') {
     })
 }
 
-app.get('/user/tier', jwtCheck, async (req, res) => {
+app.get('/user/tier', jwtCheck, asyncHandler(async (req, res) => {
     const userId = req.auth.payload.sub;
 
     if (!userId) {
@@ -60,9 +64,9 @@ app.get('/user/tier', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to fetch tier for ${userId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.get('/user', jwtCheck, async (req, res) => {
+app.get('/user', jwtCheck, asyncHandler(async (req, res) => {
     const email = req.query.email;
     if (!email) {
         return res.status(400).json({ error: 'Email is required' });
@@ -79,9 +83,9 @@ app.get('/user', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to fetch user with email ${email}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.get('/user/:userId', jwtCheck, async (req, res) => {
+app.get('/user/:userId', jwtCheck, asyncHandler(async (req, res) => {
     const userId = req.params.userId
 
     try {
@@ -95,9 +99,9 @@ app.get('/user/:userId', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to fetch user with id ${userId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/signup', jwtCheck, async (req, res) => {
+app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
     const { email, name, auth0LoginId, picture } = req.body
 
     try {
@@ -116,9 +120,9 @@ app.post('/user/signup', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/plan', jwtCheck, async (req, res) => {
+app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
     try {
         const { tier } = req.body;
         const userId = req.auth.payload.sub;
@@ -137,14 +141,15 @@ app.post('/user/plan', jwtCheck, async (req, res) => {
         console.error('❌ Tier update failed:', err);
         res.status(500).json({ error: 'Server error' });
     }
-});
+}));
 
-app.post('/user/build', jwtCheck, async (req, res) => {
+app.post('/user/session/:sessionId/build', jwtCheck, asyncHandler(async (req, res) => {
     const { build } = req.body
     const userId = req.auth.payload.sub
+    const sessionId = req.params.sessionId;
 
-    if (!userId || !build) {
-        return res.status(400).json({ error: 'Missing userId or build' });
+    if (!userId || !sessionId || !build) {
+        return res.status(400).json({ error: 'Missing userId, sessionId, or build' });
     }
 
     try {
@@ -152,7 +157,7 @@ app.post('/user/build', jwtCheck, async (req, res) => {
             ...build,
             createdAt: Timestamp.now()
         }
-        const docRef = await createUsersBuild({ build: newBuild });
+        const docRef = await createUsersBuild({ userId, build: newBuild });
 
         //add the log entry
         const log = {
@@ -165,20 +170,21 @@ app.post('/user/build', jwtCheck, async (req, res) => {
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
 
-        return res.send(200).json({ buildId: docRef.id });
+        return res.status(200).json({ buildId: docRef.id });
     } catch (err) {
         console.error(`❌ Failed to create user build for userId ${userId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
+app.put('/user/session/:sessionId/build/:buildId', jwtCheck, asyncHandler(async (req, res) => {
     const { build } = req.body
     const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
+    const sessionId = req.params.sessionId;
 
-    if (!userId || !build || !buildId) {
-        return res.status(400).json({ error: 'Missing userId, buildId, or build' });
+    if (!userId || !build || !buildId || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, sessionId, or build' });
     }
 
     try {
@@ -199,15 +205,16 @@ app.put('/user/build/:buildId', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to update user build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
+app.post('/user/session/:sessionId/build/:buildId/steps', jwtCheck, asyncHandler(async (req, res) => {
     const { steps } = req.body
     const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
+    const sessionId = req.params.sessionId;
 
-    if (!userId || !steps || !buildId) {
-        return res.status(400).json({ error: 'Missing userId, buildId, or steps' });
+    if (!userId || !steps || !buildId || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, sessionId, or steps' });
     }
 
     try {
@@ -227,15 +234,16 @@ app.post('/user/build/:buildId/steps', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/build/:buildId/logs', jwtCheck, async (req, res) => {
+app.post('/user/session/:sessionId/build/:buildId/logs', jwtCheck, asyncHandler(async (req, res) => {
     const { logs } = req.body
     const userId = req.auth.payload.sub
     const buildId = req.params.buildId;
+    const sessionId = req.params.sessionId;
 
-    if (!userId || !logs || !buildId) {
-        return res.status(400).json({ error: 'Missing userId, buildId, or logs' });
+    if (!userId || !logs || !buildId || !sessionId) {
+        return res.status(400).json({ error: 'Missing userId, buildId, sessionId, or logs' });
     }
 
     try {
@@ -255,9 +263,9 @@ app.post('/user/build/:buildId/logs', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to add logs to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
+app.post('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => {
     const { session } = req.body
     const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
@@ -279,9 +287,9 @@ app.post('/user/session/:sessionId', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.put('/user/session/:sessionId', jwtCheck, async (req, res) => {
+app.put('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => {
     const { session } = req.body
     const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
@@ -303,9 +311,9 @@ app.put('/user/session/:sessionId', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
+app.post('/user/session/:sessionId/log', jwtCheck, asyncHandler(async (req, res) => {
     const { log } = req.body
     const userId = req.auth.payload.sub
     const sessionId = req.params.sessionId;
@@ -324,9 +332,9 @@ app.post('/user/session/:sessionId/log', jwtCheck, async (req, res) => {
         console.error(`❌ Failed to add log entry for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
         res.status(500).json({ error: 'Internal error' });
     }
-});
+}));
 
-app.post('/stripe/create-checkout-session', async (req, res) => {
+app.post('/stripe/create-checkout-session', asyncHandler(async (req, res) => {
     const CHECKOUT_URL = process.env.NODE_ENV === 'production' ? `https://${process.env.DOMAIN}` : 'http://localhost:5173';
 
     // Map tier → Stripe product
@@ -362,9 +370,9 @@ app.post('/stripe/create-checkout-session', async (req, res) => {
         console.error(`❌ Stripe session error: ${err.message}`);
         return res.status(500).json({ error: 'Could not create checkout session' });
     }
-})
+}))
 
-app.post('/stripe/confirm-checkout', jwtCheck, async (req, res) => {
+app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => {
     const { sessionId } = req.body;
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
         expand: ['subscription'],
@@ -389,9 +397,9 @@ app.post('/stripe/confirm-checkout', jwtCheck, async (req, res) => {
     await updateUserTier({ userId: user.id, tier });
 
     res.json({ status: 'success', tier });
-})
+}))
 
-app.post('/ai-get-structure', async (req, res) => {
+app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     const { message } = req.body;
 
     try {
@@ -436,22 +444,22 @@ app.post('/ai-get-structure', async (req, res) => {
         console.error('❌ AI structure error:', err);
         res.status(500).json({ error: 'Failed to generate structure' });
     }
-});
+}));
 
-app.get('/', (req, res) => {
+app.get('/', asyncHandler(async (req, res) => {
     res.send('✅ API is running');
-});
+}));
 
-app.use((req, res, next) => {
+app.use(asyncHandler(async (req, res, next) => {
     res.status(404).json({
         error: 'Not Found',
         message: `Cannot ${req.method} ${req.originalUrl}`,
     });
-});
+}));
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error('🔥 Uncaught error:', err.stack || err);
+    console.error('💥 Uncaught error:', err.stack || err);
     res.status(500).json({ error: 'Internal server error' });
 });
 
