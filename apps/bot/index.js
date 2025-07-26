@@ -112,11 +112,11 @@ bot.on('error', async (err) => {
 bot.on('kicked', async (reason, loggedIn) => {
   console.log(`Bot kicked:`, reason);
   await addLogEntry({ type: "error", message: 'Bot kicked from server', data: { reason, loggedIn }, level: 1 })
-  process.exit(0)
+  process.exit(-1)
 })
 
 bot.on('end', async (reason) => {
   console.log(`Bot disconnected..`, reason);
   await addLogEntry({ type: "error", message: 'Bot disconnected from server', data: { reason }, level: 1 })
-  process.exit(0)
+  process.exit(-1)
 });
