@@ -1,7 +1,8 @@
-# 🤖 Minecraft AI Builder (Free Tier)
+# 🤖 BuilderBot (Free Tier)
 
-**Build with AI-powered commands inside Minecraft!**  
-This mod brings your ideas to life through intelligent structure generation — just type what you want to build, and the AI translates your prompt into blocks.
+**Build smarter inside Minecraft with BuilderBot — your AI-powered building companion.**  
+BuilderBot takes your ideas and turns them into in-game structures using natural language.  
+Just type what you want to build, and the AI will handle the blocks!
 
 ---
 
@@ -12,37 +13,61 @@ This mod brings your ideas to life through intelligent structure generation — 
 - ✅ Works in **singleplayer and multiplayer**
 - ✅ No account or payment required
 
+> BuilderBot’s Free Tier gives you full access to core AI building capabilities — no strings attached.
+
 ---
 
 ## 🚀 Want to Build Bigger?
-Unlock premium features with a subscription:
+
+Unlock more powerful features with a BuilderBot subscription:
 
 - 🔓 Remove block limit (build 500+, 1000+, or unlimited blocks)
 - 💡 Access advanced AI tuning and custom presets
 - 🤝 Share Builds with Friends
 - 📜 View your build history and saved plans
 - 📈 Priority support
-- ~~🧠 Discord integration~~ (some day)
+- ~~🧠 Discord integration~~ (coming soon)
 
-> The free version is fully functional and gives you access to the AI system. No features are locked behind a paywall — premium upgrades are optional for larger-scale builds and extended features.
+> Premium upgrades are optional and designed for builders who want to go further — larger projects, deeper control, and collaborative features.
 
 ---
 
-## ⚠️ Note: BuilderBot currently requires:
+## ⚠️ Requirements for BuilderBot
+To run properly, BuilderBot currently requires:
 - 🔓 Cheats enabled
-- 🛡️ OP permissions for /give 
-- 🎨 Creative mode access (until survival support is added)
+- 🛡️ OP permissions for `/give` 
+- 🎨 Creative mode access *(survival support coming soon)*
 
 ---
 
 ## 📦 Installation
-1. Requires Forge + any required dependencies
-2. Drop this mod into your `mods` folder (really anywhere on the computer should work)
-3. Launch the BuilderBot dashboard, get your bot to connect to your Minecraft server
-4. Give build commands from the UI!
+
+1. Requires Forge + any listed dependencies
+2. Drop the BuilderBot `.jar` into your `mods` folder 
+3. Launch the **BuilderBot dashboard** and connect it to your Minecraft server
+4. Start building — directly from the UI!
 
 ---
 
-## ❓Need Help?
-- Visit: [https://mcbuilderbot.com/support](https://mcbuilderbot.com/support)
-- Join our community: [Discord Invite](https://discord.gg/mcbuilderbot)
+## ❓ Need Help?
+
+- 🌐 Website: [https://mcbuilderbot.com/support](https://mcbuilderbot.com/support)  
+- 💬 Discord: [https://discord.gg/mcbuilderbot](https://discord.gg/mcbuilderbot)
+
+---
+
+## 🛠️ Help Shape the Future of BuilderBot
+
+BuilderBot began as a passion project — now it’s time to grow together.
+
+A public GitHub repository will be released for anyone interested in contributing to the codebase or running it on their own. I’m calling on developers, testers, and curious minds to help improve BuilderBot.
+
+### Ways to contribute:
+- 🐛 **Report bugs** and strange bot behavior  
+- 💡 **Suggest new features** or creative ideas  
+- 🧪 **Contribute code** via pull requests  
+- 🌍 **Help test** in multiplayer environments  
+
+I'll keep supporting the project as long as I can — but its future lies with the community. Whether you’re a modder, a server owner, or just excited about Minecraft + AI, your input matters.
+
+**Let’s build something amazing — block by block.**
