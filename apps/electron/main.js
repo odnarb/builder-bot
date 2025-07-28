@@ -52,6 +52,8 @@ app.whenReady().then(() => {
     createWindow();
 });
 
+const envVars = {}
+
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
     if (botProcess) {
@@ -59,19 +61,19 @@ ipcMain.on('launch-bot', (event, env) => {
         return;
     }
 
-    const envVars = {
-        //TODO: UPDATE THIS TO PROD VS DEV
-        API_URL: 'http://localhost:3001',
-        // when launching, create an env var as the session id to save builds and chats to
-        SESSION_ID: crypto.randomUUID(),
-        AUTH_TOKEN: env.authToken,
-        USER_ID: env.userId,
-        COMMANDER_UUID: env.commanderUUID,
-        MC_HOST_IP: env.mcHostIp,
-        MC_HOST_PORT: env.mcHostPort,
-        MC_HOST_VERSION: env.mcHostVersion,
-        BOT_NAME: env.botName,
-    }
+    //TODO: UPDATE THIS TO PROD VS DEV
+    envVars.API_URL = 'http://localhost:3001'
+
+    // when launching, create an env var as the session id to save builds and chats to
+    envVars.SESSION_ID = crypto.randomUUID()
+
+    envVars.AUTH_TOKEN = env.authToken
+    envVars.USER_ID = env.userId
+    envVars.COMMANDER_UUID = env.commanderUUID
+    envVars.MC_HOST_IP = env.mcHostIp
+    envVars.MC_HOST_PORT = env.mcHostPort
+    envVars.MC_HOST_VERSION = env.mcHostVersion
+    envVars.BOT_NAME = env.botName
 
     event.sender.send('bot-status', { status: 'launching' });
 
@@ -103,7 +105,7 @@ ipcMain.on('launch-bot', (event, env) => {
             error_message: error.message,
             exit_code: -1
         }
-        await endSession({ sessionId: SESSION_ID, session })
+        await endSession({ sessionId: envVars.SESSION_ID, session })
 
         event.sender.send('bot-status', { status: 'exited', code: -1 });
         botProcess = null;
@@ -120,7 +122,7 @@ ipcMain.on('stop-bot', async (event) => {
             exit_reason: 'process stopped manually',
             exit_code: 0
         }
-        await endSession({ sessionId: SESSION_ID, session })
+        await endSession({ envVars, session })
     } else {
         console.log('⚠️ No bot process to stop.');
     }
@@ -141,6 +143,6 @@ ipcMain.on('window:close', async () => {
         exit_reason: 'process stopped manually',
         exit_code: 0
     }
-    await endSession({ sessionId: SESSION_ID, session })
+    await endSession({ sessionId: envVars.SESSION_ID, session })
     BrowserWindow.getFocusedWindow()?.close();
 });

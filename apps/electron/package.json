@@ -2,6 +2,9 @@
     "name": "builderbot",
     "version": "1.0.0",
     "main": "main.js",
+    "scripts": {
+        "dev:electron": "electron ."
+    },
     "build": {
         "appId": "com.builderbot.app",
         "mac": {
