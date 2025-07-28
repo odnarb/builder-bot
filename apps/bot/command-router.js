@@ -7,7 +7,8 @@ import {
   createUserBuild,
   updateUserBuild,
   uploadBuildSteps,
-  getStructureAndTagsFromAI
+  getStructureAndTagsFromAI,
+  addLogEntry
 } from './apiClient.js';
 
 const USAGE_TIER_NAMES = {
@@ -210,6 +211,35 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
       //clear the inventory first before a build
       await bot.creative.clearInventory()
+
+      bot.chat(`Giving self the materials needed for the build...`);
+
+      // 1. Extract unique blocks from the command list
+      const blockNames = [...new Set(adjustedCommands
+        .filter(step => typeof step.block === 'string')
+        .map(step => step.block))];
+
+      // 2. Give all blocks to the bot ahead of time
+      for (const blockName of blockNames) {
+        try {
+          const itemId = bot.registry.itemsByName[blockName]?.id;
+          if (itemId === undefined) {
+            console.warn(`⚠️ Unknown block type: ${blockName}`);
+            continue;
+          }
+
+          if (bot.creative?.give) {
+            await bot.creative.give(itemId, 999);
+          } else {
+            bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
+            await bot.waitForTicks(20);
+          }
+
+          console.log(`✅ Gave ${blockName}`);
+        } catch (err) {
+          console.warn(`❌ Failed to give ${blockName}: ${err.message}`);
+        }
+      }
 
       bot.chat(`Attempting to build...`);
 
