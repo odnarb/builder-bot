@@ -143,6 +143,6 @@ ipcMain.on('window:close', async () => {
         exit_reason: 'process stopped manually',
         exit_code: 0
     }
-    await endSession({ sessionId: envVars.SESSION_ID, session })
+    await endSession({ envVars, session })
     BrowserWindow.getFocusedWindow()?.close();
 });
