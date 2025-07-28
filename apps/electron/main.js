@@ -108,11 +108,13 @@ ipcMain.on('launch-bot', (event, env) => {
     });
 });
 
-ipcMain.on('stop-bot', (event) => {
+ipcMain.on('stop-bot', async (event) => {
     if (botProcess) {
         console.log('🛑 Stopping bot process...');
         botProcess.kill('SIGINT'); // or 'SIGTERM' for softer shutdown
         botProcess = null
+
+        await endSession({ sessionId: SESSION_ID, session })
     } else {
         console.log('⚠️ No bot process to stop.');
     }
@@ -128,6 +130,7 @@ ipcMain.on('window:toggle-maximize', () => {
     win.isMaximized() ? win.unmaximize() : win.maximize();
 });
 
-ipcMain.on('window:close', () => {
+ipcMain.on('window:close', async () => {
+    await endSession({ sessionId: SESSION_ID, session })
     BrowserWindow.getFocusedWindow()?.close();
 });
