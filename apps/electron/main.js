@@ -114,6 +114,10 @@ ipcMain.on('stop-bot', async (event) => {
         botProcess.kill('SIGINT'); // or 'SIGTERM' for softer shutdown
         botProcess = null
 
+        const session = {
+            exit_reason: 'process stopped manually',
+            exit_code: 0
+        }
         await endSession({ sessionId: SESSION_ID, session })
     } else {
         console.log('⚠️ No bot process to stop.');
@@ -131,6 +135,10 @@ ipcMain.on('window:toggle-maximize', () => {
 });
 
 ipcMain.on('window:close', async () => {
+    const session = {
+        exit_reason: 'process stopped manually',
+        exit_code: 0
+    }
     await endSession({ sessionId: SESSION_ID, session })
     BrowserWindow.getFocusedWindow()?.close();
 });
