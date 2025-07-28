@@ -65,7 +65,8 @@ export async function createUserBuild({ build }) {
 
     if (!res.ok) return handleApiError(res, 'Update build');
 
-    return res.json(); // returns { buildId }
+    const { buildId } = await res.json()
+    return buildId
 }
 
 // Update build

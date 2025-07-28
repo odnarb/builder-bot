@@ -89,15 +89,15 @@ bot.on('chat', async (username, message) => {
     addLogEntry({ type: "chat", message, from: username, level: 0 })
 
     //TODO: update state that lets the webUI know so that commands can't be spammed
-    handlingCommand = true
+    // handlingCommand = true
 
-    if (!handlingCommand) {
-      await handlePlayerCommand({ commander, bot, message: finalMessage, username });
-    } else {
-      bot.chat(`Sorry, I'm currently busy with the previous command.`)
-    }
+    // if (!handlingCommand) {
+    await handlePlayerCommand({ commander, bot, message: finalMessage, username });
+    // } else {
+    //   bot.chat(`Sorry, I'm currently busy with the previous command.`)
+    // }
 
-    handlingCommand = false
+    // handlingCommand = false
   } catch (error) {
     console.error(`Could not process command. ${error.stack}`)
   }

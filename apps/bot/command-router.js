@@ -217,7 +217,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       // 1. Extract unique blocks from the command list
       const blockNames = [...new Set(adjustedCommands
         .filter(step => typeof step.block === 'string')
-        .map(step => step.block))];
+        .map(step => step.block.replace(/^minecraft:/, '')))];
 
       // 2. Give all blocks to the bot ahead of time
       for (const blockName of blockNames) {

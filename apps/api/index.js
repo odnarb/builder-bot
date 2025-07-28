@@ -9,6 +9,7 @@ import 'dotenv/config.js';
 
 import {
     addLogEntryToUsersSession,
+    addLogsToUsersBuild,
     addStepsToUsersBuild,
     createUser,
     createUsersBuild,
