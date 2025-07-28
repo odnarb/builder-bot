@@ -47,16 +47,6 @@ export async function executeCommands({ bot, buildId, commands }) {
         }
       }
 
-      // Attempt to place the actual block
-      const adjacentOffsets = [
-        new Vec3(0, -1, 0),
-        new Vec3(1, 0, 0),
-        new Vec3(-1, 0, 0),
-        new Vec3(0, 0, 1),
-        new Vec3(0, 0, -1),
-        new Vec3(0, 1, 0)
-      ];
-
       let placed = false;
 
       if (!placed) {
