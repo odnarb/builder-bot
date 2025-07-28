@@ -161,5 +161,5 @@ export async function executeCommands({ bot, buildId, commands }) {
   await updateUserBuild({ buildId, build })
 
   //update build log
-  await uploadBuildLogs({ buildId, logs })
+  await uploadBuildLogs({ buildId, logs: stepsLog })
 }
