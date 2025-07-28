@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let botProcess = null;
+let tray = null;
 
 function createWindow() {
     const win = new BrowserWindow({
@@ -26,7 +27,30 @@ function createWindow() {
     win.loadURL('http://localhost:5173'); // or loadFile for production
 }
 
-app.whenReady().then(createWindow);
+function createTray() {
+    const iconPath = path.join(__dirname, 'assets', process.platform === 'win32' ? 'logo.ico' : 'logo.png');
+    const icon = nativeImage.createFromPath(iconPath);
+
+    tray = new Tray(icon); // Must be called AFTER app is ready
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Show App', click: () => {
+                const win = BrowserWindow.getAllWindows()[0];
+                if (win) win.show();
+            }
+        },
+        { label: 'Quit', click: () => app.quit() }
+    ]);
+
+    tray.setToolTip('BuilderBot');
+    tray.setContextMenu(contextMenu);
+}
+
+app.whenReady().then(() => {
+    createTray();
+    createWindow();
+});
 
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
@@ -51,9 +75,7 @@ ipcMain.on('launch-bot', (event, env) => {
 
     event.sender.send('bot-status', { status: 'launching' });
 
-    console.log(`auth token: `, envVars.AUTH_TOKEN)
-
-    const botProcess = spawn('node', ['bot/index.js'], {
+    botProcess = spawn('node', ['bot/index.js'], {
         env: envVars,
         LANG: 'en_US.UTF-8',
         cwd: path.resolve(__dirname, '..'),
@@ -84,4 +106,28 @@ ipcMain.on('launch-bot', (event, env) => {
         event.sender.send('bot-status', { status: 'exited', code: -1 });
         botProcess = null;
     });
+});
+
+ipcMain.on('stop-bot', (event) => {
+    if (botProcess) {
+        console.log('🛑 Stopping bot process...');
+        botProcess.kill('SIGINT'); // or 'SIGTERM' for softer shutdown
+        botProcess = null
+    } else {
+        console.log('⚠️ No bot process to stop.');
+    }
+});
+
+ipcMain.on('window:minimize', () => {
+    BrowserWindow.getFocusedWindow()?.minimize();
+});
+
+ipcMain.on('window:toggle-maximize', () => {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) return;
+    win.isMaximized() ? win.unmaximize() : win.maximize();
+});
+
+ipcMain.on('window:close', () => {
+    BrowserWindow.getFocusedWindow()?.close();
 });

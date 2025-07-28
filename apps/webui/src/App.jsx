@@ -9,6 +9,7 @@ import PromptInput from './components/PromptInput';
 import PlanSelector from './components/PlanSelector';
 import CheckoutSuccess from './components/CheckoutSuccess';
 import Spinner from './components/Spinner';
+import TitleBar from './components/TitleBar';
 
 function Dashboard({ user, logout, tier }) {
   const tierColor = {
@@ -20,24 +21,27 @@ function Dashboard({ user, logout, tier }) {
 
   return (
     <WebSocketProvider>
-      <div className="min-h-screen bg-gray-950 text-white p-6 space-y-4">
-        <div className="flex justify-between items-center">
-          <h1 className="flex items-center text-2xl font-bold text-green-400 gap-2">
-            <img src='src/logo.png' width={64} alt='BquilderBot' /> BuilderBot Dashboard
-          </h1>
-          <div>
-            <span className="mr-4">
-              👤 {user?.name}
-              <span className={`ml-2 px-2 py-0.5 text-xs rounded uppercase ${tierColor}`}>{tier}</span>
-            </span>
-            <button onClick={() => logout({ returnTo: window.location.origin })} className="text-red-400 hover:underline">
-              Log Out
-            </button>
+      <div className="min-h-screen bg-gray-950 text-white">
+        <TitleBar />
+        <div className="p-6 space-y-4">
+          <div className="flex justify-between items-center">
+            <h1 className="flex items-center text-2xl font-bold text-green-400 gap-2">
+              <img src='src/logo.png' width={64} alt='BuilderBot' /> BuilderBot Dashboard
+            </h1>
+            <div>
+              <span className="mr-4">
+                👤 {user?.name}
+                <span className={`ml-2 px-2 py-0.5 text-xs rounded uppercase ${tierColor}`}>{tier}</span>
+              </span>
+              <button onClick={() => logout({ returnTo: window.location.origin })} className="text-red-400 hover:underline">
+                Log Out
+              </button>
+            </div>
           </div>
+          <PromptInput />
+          <ControlPanel />
+          <BotConsole />
         </div>
-        <PromptInput />
-        <ControlPanel />
-        <BotConsole />
       </div>
     </WebSocketProvider>
   );

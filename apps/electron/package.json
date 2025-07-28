@@ -1,0 +1,20 @@
+{
+    "name": "builderbot",
+    "version": "1.0.0",
+    "main": "main.js",
+    "build": {
+        "appId": "com.builderbot.app",
+        "mac": {
+            "icon": "build/assets/icon.png"
+        },
+        "linux": {
+            "icon": "build/assets/icon.png"
+        },
+        "win": {
+            "icon": "build/assets/icon.ico"
+        },
+        "directories": {
+            "buildResources": "build/assets"
+        }
+    }
+}
