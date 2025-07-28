@@ -97,6 +97,8 @@ ipcMain.on('launch-bot', (event, env) => {
         console.log(`❌ Bot process error ${err.stack}`);
         //record session end and timestamp
         const session = {
+            error_timestamp: new Date().toISOString(),
+            exit_location: 'electron',
             error: err.stack,
             error_message: error.message,
             exit_code: -1
