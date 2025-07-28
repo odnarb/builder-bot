@@ -21,38 +21,11 @@ export async function executeCommands({ bot, buildId, commands }) {
       });
 
     } else if (typeof step.block === 'string') {
-      const pos = new Vec3(step.x, step.y, step.z);
-      let item = bot.inventory.items().find(i => i.name === step.block);
-
-      // 🧱 Try to lay foundation if block below is air
-      const below = bot.blockAt(pos.offset(0, -1, 0));
-      if (!below || below.name === 'air') {
-        const foundationItem = bot.inventory.items().find(i => i.name === 'cobblestone');
-        if (!foundationItem) {
-          bot.chat(`/give ${bot.username} minecraft:cobblestone 999`);
-          await bot.waitForTicks(20);
-        }
-        const ref = bot.blockAt(pos.offset(1, -1, 0)) || bot.blockAt(pos.offset(0, -1, 1));
-        if (ref && ref.name !== 'air') {
-          try {
-            await bot.equip(bot.inventory.items().find(i => i.name === 'cobblestone'), 'hand');
-            await bot.placeBlock(ref, new Vec3(0, 1, 0));
-            console.log(`🧱 Foundation placed at ${pos.offset(0, -1, 0)}`);
-            stepsLog.push({ type: 'foundation_placed', error: `Foundation placed at ${pos.offset(0, -1, 0)}`, ...step });
-          } catch (err) {
-            console.warn(`⚠️ Failed to place foundation: ${err.message}`);
-            stepsLog.push({ type: 'error', error: 'Failed to place foundation', ...step });
-            buildSuccess = false
-          }
-        }
-      }
-
-      let placed = false;
-
-      if (!placed) {
-        console.warn(`❌ Could not place ${step.block} at ${pos} — no valid support`);
-        stepsLog.push({ type: 'error', error: 'No valid adjacent block to place against', ...step });
-      }
+      const blockName = step.block.replace(/^minecraft:/, '');
+      await placeBlockWithOverwrite(bot, new Vec3(step.x, step.y, step.z), blockName, {
+        allowOverwrite: true,
+        stepsLog
+      });
     } else {
       console.warn('⚠️ Unknown instruction:', step);
       stepsLog.push({ type: 'error', error: 'Unknown instruction', ...step });
@@ -72,4 +45,85 @@ export async function executeCommands({ bot, buildId, commands }) {
 
   //update build log
   await uploadBuildLogs({ buildId, logs: stepsLog })
+}
+
+/**
+ * Places a block at a given position, removing the existing block if necessary.
+ * @param {Bot} bot - The mineflayer bot instance
+ * @param {Vec3} pos - World position where block should be placed
+ * @param {string} blockName - Block name (e.g. "oak_planks", no "minecraft:" prefix)
+ * @param {object} [options] - Optional behavior flags
+ * @param {boolean} [options.allowOverwrite=true] - Remove block if incorrect one exists
+ * @param {boolean} [options.skipIfAlreadyCorrect=true] - Skip if correct block already present
+ * @param {number} [options.maxDistance=3.5] - Max distance before moving
+ * @param {Array} [options.stepsLog] - Optional stepsLog array to push logs into
+ * @returns {Promise<boolean>} - Returns true if placed, false otherwise
+ */
+async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
+  const {
+    allowOverwrite = true,
+    skipIfAlreadyCorrect = true,
+    maxDistance = 3.5,
+    stepsLog = null
+  } = options;
+
+  const existing = bot.blockAt(pos);
+  if (existing) {
+    if (existing.name === blockName) {
+      if (skipIfAlreadyCorrect) {
+        console.log(`⏭️ ${blockName} already at ${pos}`);
+        stepsLog?.push({ type: 'block_already_exists', block: blockName, pos });
+        return false;
+      }
+    } else if (existing.name !== 'air' && allowOverwrite) {
+      try {
+        console.log(`🪓 Removing ${existing.name} at ${pos}`);
+        await bot.dig(existing, true);
+        await bot.waitForTicks(2);
+        stepsLog?.push({ type: 'block_removed', was: existing.name, pos });
+      } catch (err) {
+        console.warn(`❌ Failed to dig ${pos}: ${err.message}`);
+        stepsLog?.push({ type: 'error', error: `dig failed: ${err.message}`, pos });
+        return false;
+      }
+    }
+  }
+
+  const below = bot.blockAt(pos.offset(0, -1, 0));
+  if (!below || below.name === 'air') {
+    console.warn(`❌ No support below ${pos}`);
+    stepsLog?.push({ type: 'error', error: 'no support block below', pos });
+    return false;
+  }
+
+  const item = bot.inventory.items().find(i => i.name === blockName);
+  if (!item) {
+    console.warn(`❌ Missing item: ${blockName}`);
+    stepsLog?.push({ type: 'error', error: 'missing item in inventory', block: blockName, pos });
+    return false;
+  }
+
+  try {
+    await bot.equip(item, 'hand');
+
+    const botPos = bot.entity.position.floored();
+    if (botPos.equals(pos)) {
+      await bot.pathfinder.goto(new goals.GoalGetToBlock(pos.x, pos.y, pos.z, 1));
+    }
+
+    if (bot.entity.position.distanceTo(pos) > maxDistance) {
+      await bot.pathfinder.goto(new goals.GoalGetToBlock(pos.x, pos.y, pos.z, 1));
+    }
+
+    await bot.lookAt(pos.offset(0.5, 0.5, 0.5), true);
+    await bot.placeBlock(below, new Vec3(0, 1, 0));
+
+    console.log(`✅ Placed ${blockName} at ${pos}`);
+    stepsLog?.push({ type: 'block_placed', block: blockName, pos });
+    return true;
+  } catch (err) {
+    console.warn(`❌ Failed to place ${blockName} at ${pos}: ${err.message}`);
+    stepsLog?.push({ type: 'error', error: `placement failed: ${err.message}`, block: blockName, pos });
+    return false;
+  }
 }
