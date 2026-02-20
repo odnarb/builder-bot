@@ -4,6 +4,7 @@ const { goals } = pkg;
 
 import { handlePlayerCommand } from './command-router.js';
 import { executeCommands } from './execute-commands.js';
+import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
@@ -97,6 +98,21 @@ export function startBotServer({ bot, commander }) {
 
         if (message.type === 'chat_command') {
           await handlePlayerCommand({ commander, bot, message: message.message, username: 'Commander' }); // or "WebUI"
+          return;
+        }
+
+        if (message.type === 'instruction_plan') {
+          const normalizedPlan = normalizeInstructionPlan(message.plan || message.payload || {});
+          const { blocks } = toLegacyBlocksAndTags(normalizedPlan);
+          await executeCommands({
+            bot,
+            commands: blocks,
+            username: 'Commander',
+          });
+          ws.send(JSON.stringify({
+            type: 'instruction_plan_applied',
+            actionCount: normalizedPlan.actions.length,
+          }));
           return;
         }
 

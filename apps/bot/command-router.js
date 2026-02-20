@@ -2,6 +2,7 @@ import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
+import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { executeCommands } from './execute-commands.js';
 import {
   createUserBuild,
@@ -187,6 +188,28 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     return;
   }
 
+  if (msg.startsWith('follow')) {
+    const playerEntity = bot.players[username]?.entity;
+    const distanceMatch = message.match(/follow\s*(\d+)?/i);
+    const followDistance = distanceMatch?.[1] ? Math.max(1, Math.min(12, Number(distanceMatch[1]))) : 3;
+
+    if (!playerEntity) {
+      bot.chat("I can't find you to follow right now.");
+      return;
+    }
+
+    const goal = new goals.GoalFollow(playerEntity, followDistance);
+    bot.pathfinder.setGoal(goal, true);
+    addLogEntry({
+      type: "command",
+      message: "follow",
+      data: { username, followDistance },
+      level: 0
+    });
+    bot.chat(`Following ${username} at distance ${followDistance}.`);
+    return;
+  }
+
   if (msg === 'stop') {
     bot.pathfinder.setGoal(null);
     bot.chat("Okay, stopped.");
@@ -235,14 +258,15 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     let steps = []
 
     //get the build steps from the AI
-    const rawSteps = await getStructureAndTagsFromAI({
+    const aiPayload = await getStructureAndTagsFromAI({
       message: prompt,
       tier: commander.tier,
       context: buildAiContext({ bot, commander, prompt }),
     })
 
     try {
-      const { blocks, tags } = JSON.parse(rawSteps)
+      const normalizedPlan = normalizeInstructionPlan(aiPayload)
+      const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan)
       steps = blocks
 
       await updateUserBuild({
@@ -250,7 +274,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         build: {
           event: "steps_parsed",
           blockCount: steps.length,
-          tags
+          tags,
+          actionCount: normalizedPlan.actions.length,
         }
       })
 

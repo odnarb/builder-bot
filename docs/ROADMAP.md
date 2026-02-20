@@ -109,19 +109,19 @@ Is this clear?
 - [x] Add AI world-context injection to `/ai-get-structure` with strict schema validation.
 
 ## Phase 2: Command/Build Execution Reliability (P0)
-- [ ] Support mixed AI action plans (`move_to` + placement) in one generated response path.
-- [ ] Add a normalized instruction schema shared by chat, WebSocket, and API.
-- [ ] Implement explicit `follow` behavior/command (not just `come here`).
-- [ ] Add strict server-side build validator (illegal block checks, max fill volume, command payload safety).
-- [ ] Split deterministic movement from LLM planning to prevent micro-move token burn loops.
-- [ ] Add retry/backoff policy for pathfinding/build failures with bounded token retries.
-- [ ] Reintroduce/ship a working CLI prompt flow (`apps/cli` currently missing).
-- [ ] Add optional `.schematic` export for generated builds.
+- [x] Support mixed AI action plans (`move_to` + placement) in one generated response path. (normalized `actions[]` plus legacy compatibility)
+- [x] Add a normalized instruction schema shared by chat, WebSocket, and API. (`apps/shared-utils/instruction-schema.js`)
+- [x] Implement explicit `follow` behavior/command (not just `come here`). (`apps/bot/command-router.js`)
+- [x] Add strict server-side build validator (illegal block checks, max fill volume, command payload safety). (`apps/api/utils/build-validator.js`)
+- [x] Split deterministic movement from LLM planning to prevent micro-move token burn loops. (movement action optimization + retry timeouts)
+- [x] Add retry/backoff policy for pathfinding/build failures with bounded token retries. (`/ai-get-structure` bounded executor retries + backoff)
+- [x] Reintroduce/ship a working CLI prompt flow (`apps/cli` currently missing). (`apps/cli/index.js`)
+- [x] Add optional `.schematic` export for generated builds. (`includeSchematic` response support)
 
 ## Phase 3: Tiering and Monetization Completion (P0/P1)
-- [ ] Enforce build frequency quotas (daily/monthly), not just per-build limits.
-- [ ] Gate chat/build features by tier.
-- [ ] Add command-block permissions by tier (Pro/Admin) with auditing trail.
+- [x] Enforce build frequency quotas (daily/monthly), not just per-build limits. (`apps/api/utils/build-governor.js`)
+- [x] Gate chat/build features by tier. (`TIER_FEATURE_POLICY` + `/user/features` + `/ai-get-structure` gating)
+- [x] Add command-block permissions by tier (Pro/Admin) with auditing trail. (validator + `/admin/security-audits`)
 - [ ] Complete build history productization (user-facing history UI + retrieval API).
 - [ ] Add SKU expansion from roadmap docs: Lite, Annual Pro, Server License, Mega Build Pass.
 - [ ] Implement referral bonus rules and entitlement updates.
@@ -131,35 +131,35 @@ Is this clear?
 - [ ] Build operations dashboard: active sessions, installs, queue health, failures.
 - [ ] Add automated alerts for crashes, blocked placements, suspicious usage, and burn spikes.
 - [ ] Add admin incident notifications and response playbooks.
-- [ ] Implement multi-pool inference routing (standard vs priority pool by tier).
-- [ ] Add canary rollout for prompt/model changes.
-- [ ] Add quality guardrails (hallucination checks, auto-retry using fallback strategy).
+- [x] Implement multi-pool inference routing (standard vs priority pool by tier). (`inferencePool` in tier model route)
+- [x] Add canary rollout for prompt/model changes. (`isInCanaryRollout` usage-key enrollment)
+- [x] Add quality guardrails (hallucination checks, auto-retry using fallback strategy). (schema validation + retry + deterministic fallback plan)
 - [ ] Add periodic evaluation harness and regression tracking.
 - [ ] Add abuse-pattern analytics for chat and build requests.
 
 ## Phase 5: Social and Community Features (P1)
-- [ ] Add account linking and sharing flows for CurseForge/Modrinth builds.
+- [x] Add account linking and sharing flows for CurseForge/Modrinth builds. (`POST/GET /community/link`)
 - [ ] Add likes/upvotes ingestion and rewards engine with anti-fraud checks.
-- [ ] Add shareable chat phrase packs / AI personality presets.
-- [ ] Add user marketplace for build/template sharing and selling.
+- [x] Add shareable chat phrase packs / AI personality presets. (`POST/GET /community/phrase-pack(s)`)
+- [x] Add user marketplace for build/template sharing and selling. (`POST /community/marketplace/listing`, `GET /community/marketplace/listings`)
 
 ## Phase 6: Policy, Compliance, and Trust (P1)
-- [ ] Implement in-app cancellation/refund workflows from dashboard.
+- [x] Implement in-app cancellation/refund workflows from dashboard. (`POST /user/subscription/ticket`)
 - [ ] Enforce refund and renewal policy logic in backend billing flows.
 - [ ] Publish and wire Terms/Privacy acceptance into signup/checkout.
-- [ ] Add parental controls and moderation layer for inappropriate output.
+- [x] Add parental controls and moderation layer for inappropriate output. (`/user/parental-controls` + prompt moderation filter)
 
 ## Phase 7: UX and Growth Backlog (P2)
 - [ ] Ship mobile-optimized web experience.
 - [ ] Add localization (Spanish, Portuguese, French).
-- [ ] Add campaign tooling/attribution for influencer and referral growth loops.
+- [x] Add campaign tooling/attribution for influencer and referral growth loops. (`POST /analytics/attribution`, `GET /admin/analytics/attribution`)
 
 ## Economics Baseline To Implement (from margin-analysis doc)
-- [ ] Free: `4k` max input/request, `100` req/month, `1` concurrency, hard cap.
-- [ ] Starter: `8k` max input/request, `1,000` req/month, `2` concurrency, basic overage.
-- [ ] Pro: `16k` max input/request, `5,000` req/month, `4` concurrency, advanced overage.
-- [ ] Admin: `32k` max input/request, `15,000` req/month, `8` concurrency, metered overage.
-- [ ] Enforce output caps per tier using explicit `max_output_tokens` policy.
+- [x] Free: `4k` max input/request, `100` req/month, `1` concurrency, hard cap.
+- [x] Starter: `8k` max input/request, `1,000` req/month, `2` concurrency, basic overage.
+- [x] Pro: `16k` max input/request, `5,000` req/month, `4` concurrency, advanced overage.
+- [x] Admin: `32k` max input/request, `15,000` req/month, `8` concurrency, metered overage.
+- [x] Enforce output caps per tier using explicit `max_output_tokens` policy.
 
 ## Notes
 - Already present but incomplete: tiering, Stripe checkout, session/build logging, chat/WebSocket control.
@@ -177,4 +177,9 @@ Is this clear?
 - `2026-02-20 Implementation Pass 3`: added server-side context preparation pipeline (`prepareContextForSnapshot`) with explicit thick-snapshot trigger path detection for failures/combat/build-critical/explicit requests.
 - `2026-02-20 Implementation Pass 3`: added in-memory world memo cache with 30-120s bounded refresh interval and per-user delta encoding to reduce repeated context payload cost.
 - `2026-02-20 Implementation Pass 3`: integrated context diagnostics into `/ai-get-structure` response metadata and added regression tests for trigger resolution, memo refresh, and delta behavior.
+- `2026-02-20 Implementation Pass 4`: added normalized instruction schema and mixed action-plan execution path across API, bot chat flow, and WebSocket control.
+- `2026-02-20 Implementation Pass 4`: added server-side instruction validator with command-block permission gating, fill-volume checks, and audit events.
+- `2026-02-20 Implementation Pass 4`: added tier feature policy and build-frequency governor (daily/monthly caps) plus `/user/features` enforcement endpoint.
+- `2026-02-20 Implementation Pass 4`: expanded API with build history retrieval, ops/security dashboards, campaign attribution, community sharing/marketplace flows, policy workflows, and parental controls.
+- `2026-02-20 Implementation Pass 4`: reintroduced CLI prompt flow (`apps/cli/index.js`) and optional schematic artifact export for generated plans.
 - Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.

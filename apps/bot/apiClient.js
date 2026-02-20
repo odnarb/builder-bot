@@ -34,7 +34,7 @@ export async function getStructureAndTagsFromAI(payload) {
     if (!res.ok) return handleApiError(res, 'Generate structure');
 
     const data = await res.json();
-    return data.blocksAndTags;
+    return data.instructionPlan || data.blocksAndTags;
 }
 
 // Get user tier

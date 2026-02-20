@@ -125,3 +125,52 @@ export async function addLogEntryToUsersSession({ userId, sessionId, log }) {
         .collection('logs')
         .add(log)
 }
+
+/**
+ * Fetch recent builds for a user.
+ * @param {{ userId: string, limit?: number }} params
+ * @returns {Promise<Array<{ id: string, build: Record<string, unknown> }>>}
+ * @throws {Error}
+ */
+export async function getUsersBuilds({ userId, limit = 20 }) {
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+    const snapshot = await db.collection('users').doc(userId)
+        .collection('builds')
+        .limit(safeLimit)
+        .get();
+
+    const rows = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+    }));
+
+    rows.sort((a, b) => {
+        const aMillis = Number(a?.build?.createdAt?.toMillis?.() || 0);
+        const bMillis = Number(b?.build?.createdAt?.toMillis?.() || 0);
+        return bMillis - aMillis;
+    });
+
+    return rows;
+}
+
+/**
+ * Fetch a single build by id for a user.
+ * @param {{ userId: string, buildId: string }} params
+ * @returns {Promise<{ id: string, build: Record<string, unknown> } | null>}
+ * @throws {Error}
+ */
+export async function getUsersBuildById({ userId, buildId }) {
+    const doc = await db.collection('users').doc(userId)
+        .collection('builds')
+        .doc(buildId)
+        .get();
+
+    if (!doc.exists) {
+        return null;
+    }
+
+    return {
+        id: doc.id,
+        ...doc.data(),
+    };
+}

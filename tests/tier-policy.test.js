@@ -3,7 +3,9 @@ import test from 'node:test';
 
 import {
   getTierAiPolicy,
+  getTierFeaturePolicy,
   getTierModelRoute,
+  isInCanaryRollout,
   resolveTier,
   TIER_PRICES_USD,
 } from '../apps/api/config/tier-policy.js';
@@ -34,4 +36,21 @@ test('getTierModelRoute returns planner and executor models', () => {
   assert.ok(typeof route.plannerModel === 'string' && route.plannerModel.length > 0);
   assert.ok(typeof route.executorModel === 'string' && route.executorModel.length > 0);
   assert.ok(typeof route.fallbackModel === 'string' && route.fallbackModel.length > 0);
+  assert.ok(route.inferencePool === 'standard' || route.inferencePool === 'priority');
+});
+
+test('getTierFeaturePolicy returns build and command block limits', () => {
+  const free = getTierFeaturePolicy('free');
+  const pro = getTierFeaturePolicy('pro');
+
+  assert.equal(free.maxBlocksPerBuild, 50);
+  assert.equal(free.allowCommandBlocks, false);
+  assert.equal(pro.allowCommandBlocks, true);
+  assert.equal(pro.maxBuildRequestsPerMonth, 5000);
+});
+
+test('isInCanaryRollout is deterministic for same usage key', () => {
+  const first = isInCanaryRollout({ usageKey: 'auth:user-a', rolloutPercent: 50 });
+  const second = isInCanaryRollout({ usageKey: 'auth:user-a', rolloutPercent: 50 });
+  assert.equal(first, second);
 });

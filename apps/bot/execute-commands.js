@@ -3,7 +3,17 @@ import pkg from 'mineflayer-pathfinder';
 import { updateUserBuild, uploadBuildLogs } from './apiClient.js';
 const { goals } = pkg;
 
-export async function executeCommands({ bot, buildId, commands }) {
+/**
+ * Execute mixed movement/build actions against the bot.
+ * @param {{
+ *   bot: any,
+ *   buildId?: string,
+ *   commands: Array<Record<string, unknown>>,
+ *   username?: string,
+ * }} params
+ * @returns {Promise<void>}
+ */
+export async function executeCommands({ bot, buildId, commands, username = 'Commander' }) {
   const stepsLog = []
   let buildSuccess = true
 
@@ -13,13 +23,57 @@ export async function executeCommands({ bot, buildId, commands }) {
       bot.pathfinder.setGoal(goal);
       stepsLog.push({ type: 'moving_to', ...step })
 
-      await new Promise(resolve => {
-        bot.once('goal_reached', () => {
-          stepsLog.push({ type: 'goal_reached', ...step })
-          resolve();
-        });
-      });
+      const maxAttempts = 2;
+      let reachedGoal = false;
 
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        await new Promise(resolve => {
+          let resolved = false;
+          const timeoutId = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              resolve();
+            }
+          }, 12000);
+
+          bot.once('goal_reached', () => {
+            if (!resolved) {
+              clearTimeout(timeoutId);
+              resolved = true;
+              reachedGoal = true;
+              stepsLog.push({ type: 'goal_reached', attempt, ...step })
+              resolve();
+            }
+          });
+        });
+        if (reachedGoal) {
+          break;
+        }
+        stepsLog.push({ type: 'path_retry', attempt, ...step });
+      }
+
+      if (!reachedGoal) {
+        buildSuccess = false;
+        stepsLog.push({ type: 'error', error: 'move_to timeout', ...step });
+      }
+
+    } else if (step.type === 'follow') {
+      const targetPlayerName = typeof step.target === 'string' ? step.target : username;
+      const targetEntity = bot.players[targetPlayerName]?.entity;
+      const followDistance = Math.max(1, Math.min(12, Number(step.distance) || 3));
+
+      if (!targetEntity) {
+        buildSuccess = false;
+        stepsLog.push({ type: 'error', error: `follow target not found: ${targetPlayerName}` });
+        continue;
+      }
+
+      const goal = new goals.GoalFollow(targetEntity, followDistance);
+      bot.pathfinder.setGoal(goal, true);
+      stepsLog.push({ type: 'following', target: targetPlayerName, distance: followDistance });
+    } else if (step.type === 'stop') {
+      bot.pathfinder.setGoal(null);
+      stepsLog.push({ type: 'stopped' });
     } else if (typeof step.block === 'string') {
       const blockName = step.block.replace(/^minecraft:/, '');
       const placed = await placeBlockWithOverwrite(bot, new Vec3(step.x, step.y, step.z), blockName, {
@@ -43,11 +97,13 @@ export async function executeCommands({ bot, buildId, commands }) {
   const build = {
     success: buildSuccess
   }
-  //update the final build
-  await updateUserBuild({ buildId, build })
+  if (buildId) {
+    //update the final build
+    await updateUserBuild({ buildId, build })
 
-  //update build log
-  await uploadBuildLogs({ buildId, logs: stepsLog })
+    //update build log
+    await uploadBuildLogs({ buildId, logs: stepsLog })
+  }
 }
 
 /**
