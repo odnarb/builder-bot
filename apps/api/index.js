@@ -21,6 +21,22 @@ import {
     updateUserTier
 } from './core/firestore/users.js';
 import { Timestamp } from '@google-cloud/firestore';
+import {
+    getTierAiPolicy,
+    getTierModelRoute,
+    resolveTier,
+} from './config/tier-policy.js';
+import {
+    buildContextSnapshot,
+    estimateAiInputTokens,
+    estimateTokenCountFromText,
+} from './utils/ai-context.js';
+import {
+    finalizeUsage,
+    getUsageSnapshot,
+    releaseInFlightSlot,
+    reserveUsage,
+} from './utils/token-governor.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-04-10',
@@ -35,6 +51,81 @@ app.use(bodyParser.json());
 const asyncHandler = fn => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
+
+/**
+ * Resolve a stable per-user usage key for monthly token budgeting.
+ * Falls back to anonymous keys when auth is not present.
+ * @param {import('express').Request} req
+ * @param {'free' | 'starter' | 'pro' | 'admin'} tier
+ * @returns {string}
+ */
+function resolveAiUsageKey(req, tier) {
+    const authUserId = req.auth?.payload?.sub;
+    if (authUserId) {
+        return `auth:${authUserId}`;
+    }
+
+    const headerUserId = req.headers['x-user-id'];
+    if (typeof headerUserId === 'string' && headerUserId.trim().length > 0) {
+        return `header:${headerUserId}`;
+    }
+
+    return `anon:${tier}:${req.ip || 'unknown-ip'}`;
+}
+
+/**
+ * Execute a chat completion with automatic fallback model retry.
+ * @param {{
+ *   primaryModel: string,
+ *   fallbackModel: string,
+ *   messages: Array<{ role: 'system' | 'user' | 'assistant', content: string }>,
+ *   maxTokens?: number,
+ * }} params
+ * @returns {Promise<{ text: string, modelUsed: string, fallbackUsed: boolean }>}
+ * @throws {Error}
+ */
+async function createCompletionWithFallback({ primaryModel, fallbackModel, messages, maxTokens }) {
+    const callModel = async (model) => openai.chat.completions.create({
+        model,
+        messages,
+        ...(typeof maxTokens === 'number' ? { max_tokens: maxTokens } : {}),
+    });
+
+    try {
+        const chat = await callModel(primaryModel);
+        return {
+            text: chat.choices?.[0]?.message?.content?.trim() || '',
+            modelUsed: primaryModel,
+            fallbackUsed: false,
+        };
+    } catch (primaryError) {
+        if (primaryModel === fallbackModel) {
+            throw primaryError;
+        }
+
+        const fallbackChat = await callModel(fallbackModel);
+        return {
+            text: fallbackChat.choices?.[0]?.message?.content?.trim() || '',
+            modelUsed: fallbackModel,
+            fallbackUsed: true,
+        };
+    }
+}
+
+/**
+ * Parse and validate the executor response payload.
+ * @param {string} raw
+ * @returns {{ blocks: Array<unknown>, tags: Array<unknown> }}
+ * @throws {Error}
+ */
+function parseBlocksAndTags(raw) {
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.blocks) || !Array.isArray(parsed.tags)) {
+        throw new Error('Invalid AI response format');
+    }
+
+    return parsed;
+}
 
 //rewrite urls from /api to /
 if (process.env.NODE_ENV !== 'production') {
@@ -398,49 +489,139 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
 }))
 
 app.post('/ai-get-structure', asyncHandler(async (req, res) => {
-    const { message } = req.body;
+    const { message, tier: rawTier, context = {} } = req.body || {};
+
+    if (typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: 'message is required' });
+    }
+
+    const tier = resolveTier(rawTier);
+    const tierPolicy = getTierAiPolicy(tier);
+    const modelRoute = getTierModelRoute(tier);
+    const contextSnapshot = buildContextSnapshot({ context, tierPolicy });
+    const estimatedInputTokens = estimateAiInputTokens({
+        message,
+        contextSnapshot,
+        tier,
+    });
+
+    if (estimatedInputTokens > tierPolicy.maxInputTokensPerRequest) {
+        return res.status(400).json({
+            error: `Input too large for tier "${tier}". Reduce prompt/context size.`,
+        });
+    }
+
+    const usageKey = resolveAiUsageKey(req, tier);
+    try {
+        reserveUsage({
+            userKey: usageKey,
+            estimatedInputTokens,
+            tierPolicy,
+        });
+    } catch (usageError) {
+        return res.status(429).json({ error: usageError.message });
+    }
+
+    let usageFinalized = false;
 
     try {
-        const chat = await openai.chat.completions.create({
-            model: 'gpt-4',
+        const plannerCompletion = await createCompletionWithFallback({
+            primaryModel: modelRoute.plannerModel,
+            fallbackModel: modelRoute.fallbackModel,
             messages: [
                 {
                     role: 'system',
-                    content: `You are a Minecraft building assistant. Given a natural language prompt, output two things:
-                        1. A JSON array of block placements to construct the requested structure.
-                        2. A JSON array of string tags that describe the structure (e.g., "house", "modern", "roof", "glass", "farm", "castle").
-
-                        Rules:
-                        - All positions must be relative to origin (0,0,0).
-                        - Output ONLY raw JSON. Do NOT include explanations, markdown, or commentary.
-                        - Output format:
-                        {
-                        "blocks": [ 
-                            { "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" },
-                            ...
-                        ],
-                        "tags": ["house", "wood", "roof", "modern"]
-                        }
-
-                        - Do NOT include air blocks or blocks below the foundation.
-                        - Assume a flat foundation exists; only place blocks *on top* of other blocks or the foundation.
-                        - All structures must be family-friendly (suitable for young children).
-                        - Sort blocks from lowest Y to highest Y to optimize motion.
-
-                        Assume a roof is required unless the prompt clearly says otherwise.`,
+                    content: `You are a Minecraft structure planner.
+Output JSON only with keys:
+{
+  "intent": string,
+  "constraints": { "maxBlocks": number, "allowCommandBlocks": boolean, "notes": string[] },
+  "materials": string[],
+  "phases": string[],
+  "targetStyleTags": string[]
+}
+Keep concise and executable.`,
                 },
                 {
                     role: 'user',
-                    content: message,
+                    content: JSON.stringify({
+                        tier,
+                        prompt: message,
+                        context: contextSnapshot,
+                    }),
                 },
             ],
+            maxTokens: Math.min(900, tierPolicy.maxOutputTokensPerRequest),
         });
 
-        const blocksAndTags = chat.choices[0].message.content.trim();
-        res.json({ blocksAndTags });
+        const executorCompletion = await createCompletionWithFallback({
+            primaryModel: modelRoute.executorModel,
+            fallbackModel: modelRoute.fallbackModel,
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are a Minecraft building assistant.
+Generate ONLY raw JSON in this shape:
+{
+  "blocks": [
+    { "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
+  ],
+  "tags": ["house", "wood"]
+}
+Rules:
+- Relative coordinates only.
+- No markdown or explanations.
+- No air blocks.
+- Do not exceed tier constraints in planner notes.`,
+                },
+                {
+                    role: 'user',
+                    content: JSON.stringify({
+                        prompt: message,
+                        tier,
+                        context: contextSnapshot,
+                        plan: plannerCompletion.text,
+                    }),
+                },
+            ],
+            maxTokens: tierPolicy.maxOutputTokensPerRequest,
+        });
+
+        const parsed = parseBlocksAndTags(executorCompletion.text);
+        const normalizedBlocksAndTags = JSON.stringify(parsed);
+        const estimatedOutputTokens = estimateTokenCountFromText(normalizedBlocksAndTags);
+
+        try {
+            finalizeUsage({
+                userKey: usageKey,
+                estimatedOutputTokens,
+                tierPolicy,
+            });
+            usageFinalized = true;
+        } catch (usageError) {
+            return res.status(429).json({ error: usageError.message });
+        }
+
+        return res.json({
+            blocksAndTags: normalizedBlocksAndTags,
+            meta: {
+                tier,
+                modelRoute: {
+                    planner: plannerCompletion.modelUsed,
+                    executor: executorCompletion.modelUsed,
+                },
+                fallbackUsed: plannerCompletion.fallbackUsed || executorCompletion.fallbackUsed,
+                estimatedInputTokens,
+                estimatedOutputTokens,
+                usage: getUsageSnapshot(usageKey),
+            },
+        });
     } catch (err) {
-        console.error('❌ AI structure error:', err);
-        res.status(500).json({ error: 'Failed to generate structure' });
+        if (!usageFinalized) {
+            releaseInFlightSlot(usageKey);
+        }
+        console.error('❌ AI structure error:', err.stack || err);
+        return res.status(500).json({ error: 'Failed to generate structure' });
     }
 }));
 

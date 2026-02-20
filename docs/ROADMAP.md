@@ -6,26 +6,107 @@ Sources audited:
 
 Goal: ship world-context injection without breaking SaaS unit economics, and keep every paid tier margin-positive at full-cap usage.
 
+## Implementation Status
+Implementation resumed after human decisions were provided.
+
+## Contradictions Found (2026-02-20, Historical)
+These blockers were identified first, then resolved in `2026-02-20 Implementation Pass 1`.
+1. Tier price conflict:
+   - Resolved by updating UI pricing to Pro `12.99` and Admin `24.99`.
+2. Free tier block-limit conflict:
+   - Resolved by enforcing `50` blocks for Free tier in bot command limits.
+3. Model-cost assumption conflict:
+   - Resolved by replacing single-model build generation with hybrid planner/executor routing and per-tier model policies.
+4. “Done” state conflict:
+   - Resolved by aligning roadmap status with code changes and implementation notes.
+
+## Questions For Human Resolution (Resolved)
+1. What are the canonical Pro/Admin prices to use everywhere right now:
+   - Option A: `9.99` / `19.99`
+   - Option B: `12.99` / `24.99` RESPONSE: <--- use B
+2. What is the canonical Free block limit:
+   - Option A: `50` <----  RESPONSE: use A
+   - Option B: `100`
+3. What is the canonical model strategy for build generation:
+   - Option A: keep `gpt-4` for now
+   - Option B: move to per-tier mini-family routing now
+   - Option C (Recommended): Hybrid Model Strategy <--- use option C
+
+//BEGIN ANSWER TO #3
+      Architecture
+      Use two logical roles:
+      1. Planner Model (higher intelligence, lower frequency)
+      2. Executor Model (mini-family, high frequency)
+
+
+🏗 Example User Flow: “Build a medieval watchtower 12 blocks tall.”
+
+Step 1 — Planner (Higher Model)
+Generate:
+Materials list
+Structural outline
+Phased plan
+Block count estimate
+Constraints
+Called once.
+
+Step 2 — Executor (Mini Model)
+Expand step-by-step placement
+Validate inventory
+Adjust to terrain
+Handle small variations
+Called many times.
+
+📊 How This Affects Profitability
+Let’s say:
+Without hybrid:
+50 LLM calls per build
+All at premium cost
+With hybrid:
+1 premium planning call
+49 mini calls
+That cuts premium token exposure by ~98%.
+That’s massive margin protection.
+
+Tier	Planner Model	Executor Model
+Free	mini	mini
+Starter	mini	mini
+Pro	mid-tier	mini
+Admin	high-tier	mini
+
+Admin gets best planner.
+Execution always mini (because it’s procedural).
+
+This keeps costs predictable.
+
+Is this clear?
+//END ANSWER TO #3
+
+4. Should `docs/AI-SaaS-Token-Economics-Margin-Analysis-Plan.md` be updated to match the final pricing decision before implementation starts?
+   RESPONSE: I already added a new table with new pricing plans.
+5. Should website marketing copy always mirror hard-enforced limits exactly, or can it remain “plan summary” language?
+   RESPONSE: just plan summary language for now
+
 ## Phase 0: Margin Guardrails Foundation (P0)
-- [x] Raise pro tier from 9.99 to 12.99. Raise admin tier from 19.99 to 24.99. 2/20/2026: This is done.
-- [ ] Lock canonical tier economics in code (model, input cap/request, output cap/request, requests/month, concurrency, overage policy).
-- [ ] Implement per-tier token governor middleware in API (`max_input_tokens`, `max_output_tokens`, monthly token quotas).
-- [ ] Add per-tier request quotas and hard stops when cap is reached.
-- [ ] Add per-tier concurrency controls (queue slots and rejection behavior).
-- [ ] Add per-tier model routing (lower-cost models on Free/Starter, higher capability for Pro/Admin).
+- [x] Resolve canonical Pro/Admin pricing and align docs + UI + billing code to one source of truth. (UI updated to Pro `12.99`, Admin `24.99`)
+- [x] Lock canonical tier economics in code (model, input cap/request, output cap/request, requests/month, concurrency, overage policy). (`apps/api/config/tier-policy.js`)
+- [x] Implement per-tier token governor middleware in API (`max_input_tokens`, `max_output_tokens`, monthly token quotas). (`apps/api/utils/token-governor.js` used by `/ai-get-structure`)
+- [x] Add per-tier request quotas and hard stops when cap is reached. (implemented on `/ai-get-structure`)
+- [x] Add per-tier concurrency controls (queue slots and rejection behavior). (implemented on `/ai-get-structure`)
+- [x] Add per-tier model routing (lower-cost models on Free/Starter, higher capability for Pro/Admin). (hybrid planner/executor route with fallback)
 - [ ] Add usage metering tables for `input_tokens`, `output_tokens`, `api_cost`, `infra_cost`, `total_cost`, `gross_margin`.
 - [ ] Add monthly margin report endpoint/job by tier (`revenue`, `cost`, `raw_profit`, `margin_percent`).
 - [ ] Add break-even monitors and alerts when projected margin drops below threshold.
 
 ## Phase 1: World-Context Injection + Token Control (P0)
-- [ ] Add server-side context pipeline: `ContextBuilder -> Compression -> TierGate -> TokenEstimator -> OpenAI`.
-- [ ] Implement thin snapshot (default): bot position, health/hunger, compact inventory, nearby entities, task state, short diff.
+- [x] Add server-side context pipeline: `ContextBuilder -> Compression -> TierGate -> TokenEstimator -> OpenAI`. (implemented in `/ai-get-structure`)
+- [x] Implement thin snapshot (default): bot position, health/hunger, compact inventory, nearby entities, task state, short diff. (`apps/api/utils/ai-context.js`)
 - [ ] Implement thick snapshot trigger path (failures, combat, build-critical steps, explicit request).
-- [ ] Add deterministic compression (top-K summaries, float quantization, null/default stripping, canonical keys).
+- [x] Add deterministic compression (top-K summaries, float quantization, null/default stripping, canonical keys). (initial implementation)
 - [ ] Add delta encoding so repeated requests send only state changes.
 - [ ] Add world memo cache refreshed on interval (30-120s target).
-- [ ] Enforce per-tier context size budgets before model call.
-- [ ] Add AI world-context injection to `/ai-get-structure` with strict schema validation.
+- [x] Enforce per-tier context size budgets before model call.
+- [x] Add AI world-context injection to `/ai-get-structure` with strict schema validation.
 
 ## Phase 2: Command/Build Execution Reliability (P0)
 - [ ] Support mixed AI action plans (`move_to` + placement) in one generated response path.
@@ -83,3 +164,11 @@ Goal: ship world-context injection without breaking SaaS unit economics, and kee
 ## Notes
 - Already present but incomplete: tiering, Stripe checkout, session/build logging, chat/WebSocket control.
 - This roadmap is intentionally margin-aware: token safety and profitability are now P0 gates, not later-phase nice-to-haves.
+- `2026-02-20 Implementation Pass 1`: added canonical tier pricing/policy config in `apps/api/config/tier-policy.js`.
+- `2026-02-20 Implementation Pass 1`: added context compression/token estimation in `apps/api/utils/ai-context.js`.
+- `2026-02-20 Implementation Pass 1`: added in-memory monthly request/token governor in `apps/api/utils/token-governor.js`.
+- `2026-02-20 Implementation Pass 1`: upgraded `/ai-get-structure` to hybrid planner/executor model flow with per-tier limits and fallback model handling.
+- `2026-02-20 Implementation Pass 1`: updated bot to send world context with build prompts.
+- `2026-02-20 Implementation Pass 1`: updated plan UI pricing to Pro `12.99` and Admin `24.99`.
+- `2026-02-20 Implementation Pass 1`: aligned free build cap enforcement to `50` blocks in bot command routing.
+- Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.
