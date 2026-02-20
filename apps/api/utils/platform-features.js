@@ -1,5 +1,7 @@
 const linkedAccountsByUser = new Map();
 const buildReactionTable = new Map();
+const buildReactionEvents = [];
+const reactionRewardLedger = new Map();
 const phrasePacksByUser = new Map();
 const marketplaceListings = [];
 const policyStateByUser = new Map();
@@ -53,17 +55,29 @@ export function getLinkedCommunityAccounts(userId) {
  *   userId: string,
  *   buildId: string,
  *   reaction: 'like' | 'upvote',
+ *   buildOwnerUserId?: string | null,
  *   now?: Date,
  * }} params
- * @returns {{ buildId: string, reactionCount: number, deduplicated: boolean }}
+ * @returns {{
+ *   buildId: string,
+ *   reactionCount: number,
+ *   deduplicated: boolean,
+ *   rewardAwarded: number,
+ *   suspicious: boolean,
+ * }}
  */
-export function recordBuildReaction({ userId, buildId, reaction, now = new Date() }) {
+export function recordBuildReaction({ userId, buildId, reaction, buildOwnerUserId = null, now = new Date() }) {
     const safeReaction = String(reaction || '').toLowerCase();
     if (!['like', 'upvote'].includes(safeReaction)) {
         throw new Error('Unsupported reaction type.');
     }
 
-    const key = `${buildId}:${safeReaction}`;
+    const safeBuildId = String(buildId || '').trim();
+    if (!safeBuildId) {
+        throw new Error('buildId is required.');
+    }
+
+    const key = `${safeBuildId}:${safeReaction}`;
     if (!buildReactionTable.has(key)) {
         buildReactionTable.set(key, {
             users: new Set(),
@@ -73,21 +87,66 @@ export function recordBuildReaction({ userId, buildId, reaction, now = new Date(
 
     const row = buildReactionTable.get(key);
     const deduplicated = row.users.has(userId);
+    let suspicious = false;
+    let rewardAwarded = 0;
+    const timestamp = new Date(now).toISOString();
+
     if (!deduplicated) {
+        const oneHourAgo = new Date(now).getTime() - (60 * 60 * 1000);
+        const recentUserReactions = buildReactionEvents.filter((event) => (
+            event.userId === userId && new Date(event.timestamp).getTime() >= oneHourAgo
+        ));
+
+        suspicious = recentUserReactions.length >= 50;
         row.users.add(userId);
-        row.events.push({
+        const event = {
             userId,
-            buildId,
+            buildId: safeBuildId,
             reaction: safeReaction,
-            timestamp: new Date(now).toISOString(),
-        });
+            timestamp,
+            suspicious,
+        };
+        row.events.push(event);
+        buildReactionEvents.push(event);
+
+        const safeBuildOwnerUserId = typeof buildOwnerUserId === 'string' ? buildOwnerUserId.trim() : '';
+        if (safeBuildOwnerUserId && safeBuildOwnerUserId !== userId && !suspicious) {
+            const currentPoints = Number(reactionRewardLedger.get(safeBuildOwnerUserId) || 0);
+            rewardAwarded = 5;
+            reactionRewardLedger.set(safeBuildOwnerUserId, currentPoints + rewardAwarded);
+        }
     }
 
     return {
-        buildId,
+        buildId: safeBuildId,
         reactionCount: row.users.size,
         deduplicated,
+        rewardAwarded,
+        suspicious,
     };
+}
+
+/**
+ * Return reward points balance for a user.
+ * @param {string} userId
+ * @returns {{ userId: string, rewardPoints: number }}
+ */
+export function getRewardBalance(userId) {
+    const safeUserId = String(userId || '').trim();
+    return {
+        userId: safeUserId,
+        rewardPoints: Math.max(0, Number(reactionRewardLedger.get(safeUserId) || 0)),
+    };
+}
+
+/**
+ * Return recent reaction events for anti-fraud review.
+ * @param {{ limit?: number }} [params]
+ * @returns {Array<{ userId: string, buildId: string, reaction: string, timestamp: string, suspicious: boolean }>}
+ */
+export function getReactionEvents(params = {}) {
+    const limit = Math.max(1, Math.min(500, Number(params.limit) || 100));
+    return buildReactionEvents.slice(-limit).reverse();
 }
 
 /**
@@ -310,6 +369,8 @@ export function getAttributionEvents(params = {}) {
 export function resetPlatformFeaturesState() {
     linkedAccountsByUser.clear();
     buildReactionTable.clear();
+    buildReactionEvents.length = 0;
+    reactionRewardLedger.clear();
     phrasePacksByUser.clear();
     marketplaceListings.length = 0;
     policyStateByUser.clear();

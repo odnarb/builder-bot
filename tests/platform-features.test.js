@@ -29,6 +29,7 @@ test('platform features support account linking, reactions, and phrase packs', (
     userId: 'auth:user-a',
     buildId: 'build-1',
     reaction: 'like',
+    buildOwnerUserId: 'auth:creator',
   });
   const phrasePack = savePhrasePack({
     userId: 'auth:user-a',
@@ -39,6 +40,7 @@ test('platform features support account linking, reactions, and phrase packs', (
   assert.equal(link.platform, 'modrinth');
   assert.equal(getLinkedCommunityAccounts('auth:user-a').modrinth.handle, 'builder123');
   assert.equal(reaction.reactionCount, 1);
+  assert.equal(reaction.rewardAwarded, 5);
   assert.equal(getPhrasePacks('auth:user-a')[0].id, phrasePack.id);
 });
 

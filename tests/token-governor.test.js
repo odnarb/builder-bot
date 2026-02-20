@@ -16,6 +16,11 @@ const tierPolicy = {
   maxConcurrentRequests: 1,
 };
 
+const meteredTierPolicy = {
+  ...tierPolicy,
+  overagePolicy: 'basic_metered',
+};
+
 test('reserveUsage increments request/input and in-flight counters', () => {
   resetUsageBuckets();
   reserveUsage({ userKey: 'u1', estimatedInputTokens: 40, tierPolicy });
@@ -58,4 +63,21 @@ test('finalizeUsage enforces output cap and clears in-flight slot', () => {
     () => finalizeUsage({ userKey: 'u3', estimatedOutputTokens: 31, tierPolicy }),
     /Monthly output token limit reached/,
   );
+});
+
+test('metered tiers allow overage and track overage counters', () => {
+  resetUsageBuckets();
+  const reserve1 = reserveUsage({ userKey: 'u4', estimatedInputTokens: 90, tierPolicy: meteredTierPolicy });
+  const finalize1 = finalizeUsage({ userKey: 'u4', estimatedOutputTokens: 40, tierPolicy: meteredTierPolicy });
+  const reserve2 = reserveUsage({ userKey: 'u4', estimatedInputTokens: 30, tierPolicy: meteredTierPolicy });
+  const finalize2 = finalizeUsage({ userKey: 'u4', estimatedOutputTokens: 30, tierPolicy: meteredTierPolicy });
+
+  assert.equal(reserve1.inputOverageTokens, 0);
+  assert.equal(finalize1.outputOverageTokens, 0);
+  assert.equal(reserve2.inputOverageTokens > 0, true);
+  assert.equal(finalize2.outputOverageTokens > 0, true);
+
+  const snapshot = getUsageSnapshot('u4');
+  assert.equal(snapshot.overageInputTokens > 0, true);
+  assert.equal(snapshot.overageOutputTokens > 0, true);
 });

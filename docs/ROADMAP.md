@@ -122,35 +122,35 @@ Is this clear?
 - [x] Enforce build frequency quotas (daily/monthly), not just per-build limits. (`apps/api/utils/build-governor.js`)
 - [x] Gate chat/build features by tier. (`TIER_FEATURE_POLICY` + `/user/features` + `/ai-get-structure` gating)
 - [x] Add command-block permissions by tier (Pro/Admin) with auditing trail. (validator + `/admin/security-audits`)
-- [ ] Complete build history productization (user-facing history UI + retrieval API).
-- [ ] Add SKU expansion from roadmap docs: Lite, Annual Pro, Server License, Mega Build Pass.
-- [ ] Implement referral bonus rules and entitlement updates.
-- [ ] Implement overage billing paths for paid tiers (Starter/Pro/Admin) from policy table.
+- [x] Complete build history productization (user-facing history UI + retrieval API). (`GET /user/builds`, `GET /user/build/:buildId`, `apps/webui/src/components/BuildHistoryPanel.jsx`)
+- [ ] Add SKU expansion from roadmap docs: Lite, Annual Pro, Server License, Mega Build Pass. (deferred; currently limited to Starter/Pro/Admin monthly SKUs)
+- [x] Implement referral bonus rules and entitlement updates. (`/community/referral/*`, `/user/entitlements`, `apps/api/utils/referrals.js`)
+- [x] Implement overage billing paths for paid tiers (Starter/Pro/Admin) from policy table. (`apps/api/utils/token-governor.js`, `apps/api/utils/overage-billing.js`, `/user/overage`, `/admin/overage-report`)
 
 ## Phase 4: Ops, Reliability, and Safety (P1)
-- [ ] Build operations dashboard: active sessions, installs, queue health, failures.
-- [ ] Add automated alerts for crashes, blocked placements, suspicious usage, and burn spikes.
-- [ ] Add admin incident notifications and response playbooks.
+- [x] Build operations dashboard: active sessions, installs, queue health, failures. (`apps/api/utils/ops-metrics.js`, `GET /admin/ops-dashboard`)
+- [x] Add automated alerts for crashes, blocked placements, suspicious usage, and burn spikes. (`evaluateOpsAlerts`, `GET /admin/ops-alerts`)
+- [x] Add admin incident notifications and response playbooks. (`apps/api/utils/incident-manager.js`, `GET /admin/incidents`)
 - [x] Implement multi-pool inference routing (standard vs priority pool by tier). (`inferencePool` in tier model route)
 - [x] Add canary rollout for prompt/model changes. (`isInCanaryRollout` usage-key enrollment)
 - [x] Add quality guardrails (hallucination checks, auto-retry using fallback strategy). (schema validation + retry + deterministic fallback plan)
-- [ ] Add periodic evaluation harness and regression tracking.
-- [ ] Add abuse-pattern analytics for chat and build requests.
+- [x] Add periodic evaluation harness and regression tracking. (`apps/api/utils/evaluation-harness.js`, `POST /admin/evaluation/run`, `GET /admin/evaluation`)
+- [x] Add abuse-pattern analytics for chat and build requests. (`apps/api/utils/abuse-analytics.js`, `GET /admin/abuse-analytics`)
 
 ## Phase 5: Social and Community Features (P1)
 - [x] Add account linking and sharing flows for CurseForge/Modrinth builds. (`POST/GET /community/link`)
-- [ ] Add likes/upvotes ingestion and rewards engine with anti-fraud checks.
+- [x] Add likes/upvotes ingestion and rewards engine with anti-fraud checks. (`recordBuildReaction` anti-fraud + reward credits, `/community/rewards`)
 - [x] Add shareable chat phrase packs / AI personality presets. (`POST/GET /community/phrase-pack(s)`)
 - [x] Add user marketplace for build/template sharing and selling. (`POST /community/marketplace/listing`, `GET /community/marketplace/listings`)
 
 ## Phase 6: Policy, Compliance, and Trust (P1)
 - [x] Implement in-app cancellation/refund workflows from dashboard. (`POST /user/subscription/ticket`)
-- [ ] Enforce refund and renewal policy logic in backend billing flows.
-- [ ] Publish and wire Terms/Privacy acceptance into signup/checkout.
+- [x] Enforce refund and renewal policy logic in backend billing flows. (`apps/api/utils/billing-policy.js`, `/user/subscription/renewal`, refund eligibility enforcement in `/user/subscription/ticket`)
+- [x] Publish and wire Terms/Privacy acceptance into signup/checkout. (`/user/signup`, `/api/user/policy/accept`, `/stripe/create-checkout-session`, `/stripe/confirm-checkout`)
 - [x] Add parental controls and moderation layer for inappropriate output. (`/user/parental-controls` + prompt moderation filter)
 
 ## Phase 7: UX and Growth Backlog (P2)
-- [ ] Ship mobile-optimized web experience.
+- [x] Ship mobile-optimized web experience. (responsive dashboard + build history layout updates in `apps/webui/src/App.jsx` and `apps/webui/src/components/BuildHistoryPanel.jsx`)
 - [ ] Add localization (Spanish, Portuguese, French).
 - [x] Add campaign tooling/attribution for influencer and referral growth loops. (`POST /analytics/attribution`, `GET /admin/analytics/attribution`)
 
@@ -182,4 +182,13 @@ Is this clear?
 - `2026-02-20 Implementation Pass 4`: added tier feature policy and build-frequency governor (daily/monthly caps) plus `/user/features` enforcement endpoint.
 - `2026-02-20 Implementation Pass 4`: expanded API with build history retrieval, ops/security dashboards, campaign attribution, community sharing/marketplace flows, policy workflows, and parental controls.
 - `2026-02-20 Implementation Pass 4`: reintroduced CLI prompt flow (`apps/cli/index.js`) and optional schematic artifact export for generated plans.
+- `2026-02-20 Implementation Pass 5`: fixed missing build-history Firestore exports and shipped user-facing build history panel in Web UI (`apps/webui/src/components/BuildHistoryPanel.jsx`).
+- `2026-02-20 Implementation Pass 5`: added SKU-aware checkout routing and canonical catalog endpoint for current monthly plans (`apps/api/config/sku-catalog.js`, `POST /stripe/create-checkout-session`).
+- `2026-02-20 Implementation Pass 5`: implemented referral bonus rules, entitlement balances, and redemption endpoints (`apps/api/utils/referrals.js`, `/community/referral/*`, `/user/entitlements`).
+- `2026-02-20 Implementation Pass 5`: enabled metered overage billing paths for paid tiers and reporting endpoints (`apps/api/utils/token-governor.js`, `apps/api/utils/overage-billing.js`, `/user/overage`, `/admin/overage-report`).
+- `2026-02-20 Implementation Pass 5`: expanded ops metrics/alerts (installs, active sessions, queue depth, crash/blocked/burn spike alerts) and added incident playbooks/notifications (`apps/api/utils/ops-metrics.js`, `apps/api/utils/incident-manager.js`).
+- `2026-02-20 Implementation Pass 5`: added evaluation harness + regression tracking and abuse analytics endpoints (`apps/api/utils/evaluation-harness.js`, `apps/api/utils/abuse-analytics.js`).
+- `2026-02-20 Implementation Pass 5`: enforced refund eligibility + renewal preference policy logic and wired Terms/Privacy acceptance into signup/checkout confirmation (`apps/api/utils/billing-policy.js`, `/user/subscription/*`, `/stripe/confirm-checkout`).
+- `2026-02-20 Implementation Pass 5`: added like/upvote reward credits with anti-fraud baseline checks (`recordBuildReaction`, `/community/rewards`).
 - Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.
+- Caveat: localization content is still pending translation copy and full UI string coverage; only locale config and roadmap scaffolding exist today.

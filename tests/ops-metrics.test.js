@@ -6,6 +6,10 @@ import {
   getOpsDashboardSnapshot,
   recordAiRequestEnd,
   recordAiRequestStart,
+  recordBlockedPlacement,
+  recordCrash,
+  recordTokenBurn,
+  setQueueDepth,
   resetOpsMetricsState,
 } from '../apps/api/utils/ops-metrics.js';
 
@@ -40,4 +44,22 @@ test('evaluateOpsAlerts emits alert for high failure rate', () => {
 
   const evaluation = evaluateOpsAlerts();
   assert.equal(evaluation.alerts.some((alert) => alert.code === 'high_failure_rate'), true);
+});
+
+test('evaluateOpsAlerts emits crash, blocked placement, and burn alerts', () => {
+  resetOpsMetricsState();
+  recordCrash();
+  recordCrash();
+  recordCrash();
+  recordBlockedPlacement({ count: 25 });
+  recordTokenBurn({ usd: 6 });
+  setQueueDepth({ depth: 4 });
+
+  const snapshot = getOpsDashboardSnapshot();
+  assert.equal(snapshot.queueDepth, 4);
+
+  const evaluation = evaluateOpsAlerts();
+  assert.equal(evaluation.alerts.some((alert) => alert.code === 'crash_spike'), true);
+  assert.equal(evaluation.alerts.some((alert) => alert.code === 'blocked_placement_spike'), true);
+  assert.equal(evaluation.alerts.some((alert) => alert.code === 'burn_spike'), true);
 });

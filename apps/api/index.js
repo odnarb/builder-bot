@@ -21,7 +21,7 @@ import {
     updateUsersBuild,
     updateUsersSession,
     updateUserTier
-} from './core/firestore/users.js';
+} from '../core/firestore/users.js';
 import { Timestamp } from '@google-cloud/firestore';
 import {
     getTierAiPolicy,
@@ -30,6 +30,10 @@ import {
     isInCanaryRollout,
     resolveTier,
 } from './config/tier-policy.js';
+import {
+    getSkuCatalog,
+    resolveCheckoutSku,
+} from './config/sku-catalog.js';
 import {
     buildContextSnapshot,
     estimateAiInputTokens,
@@ -64,6 +68,12 @@ import {
     getOpsDashboardSnapshot,
     recordAiRequestEnd,
     recordAiRequestStart,
+    recordBlockedPlacement,
+    recordCrash,
+    recordInstallation,
+    recordTokenBurn,
+    setActiveSessions,
+    setQueueDepth,
 } from './utils/ops-metrics.js';
 import {
     acceptPolicyDocuments,
@@ -75,12 +85,46 @@ import {
     getParentalControls,
     getPhrasePacks,
     getPolicyAcceptance,
+    getReactionEvents,
+    getRewardBalance,
     linkCommunityAccount,
     recordAttributionEvent,
     recordBuildReaction,
     savePhrasePack,
     setParentalControls,
 } from './utils/platform-features.js';
+import {
+    createReferralCode,
+    getReferralEvents,
+    getReferralSummary,
+    getUserEntitlements,
+    redeemReferralCode,
+} from './utils/referrals.js';
+import {
+    getOverageReport,
+    getUserOverageSnapshot,
+    recordOverageUsage,
+    supportsMeteredOverage,
+} from './utils/overage-billing.js';
+import {
+    evaluateIncidentNotifications,
+    getIncidentPlaybooks,
+    getIncidents,
+    resolveIncident,
+} from './utils/incident-manager.js';
+import {
+    getEvaluationReport,
+    recordEvaluationRun,
+} from './utils/evaluation-harness.js';
+import {
+    getAbuseAnalytics,
+    recordAbuseSignal,
+} from './utils/abuse-analytics.js';
+import {
+    evaluateRefundEligibility,
+    getRenewalPreference,
+    setRenewalPreference,
+} from './utils/billing-policy.js';
 import logger from './utils/logger.js';
 import { parsePrompt } from '../../packages/prompt-parser/index.js';
 import {
@@ -306,6 +350,47 @@ app.get('/user/features', jwtCheck, asyncHandler(async (req, res) => {
     }
 }));
 
+/**
+ * Return entitlement balances for authenticated user.
+ */
+app.get('/user/entitlements', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    return res.json({
+        entitlements: getUserEntitlements(userId),
+        referral: getReferralSummary(userId),
+    });
+}));
+
+/**
+ * Return authenticated user's metered overage snapshot.
+ */
+app.get('/user/overage', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const tier = resolveTier((await getUserById({ userId }))?.tier || 'free');
+    const usageKey = `auth:${userId}`;
+    return res.json({
+        tier,
+        overage: getUserOverageSnapshot({ userKey: usageKey }),
+    });
+}));
+
+/**
+ * Return active sellable SKU catalog.
+ */
+app.get('/config/skus', asyncHandler(async (req, res) => {
+    return res.json({
+        skus: getSkuCatalog(),
+    });
+}));
+
 app.get('/user', jwtCheck, asyncHandler(async (req, res) => {
     const email = req.query.email;
     if (!email) {
@@ -342,9 +427,17 @@ app.get('/user/:userId', jwtCheck, asyncHandler(async (req, res) => {
 }));
 
 app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
-    const { email, name, auth0LoginId, picture } = req.body
+    const {
+        email,
+        name,
+        auth0LoginId,
+        picture,
+        termsVersion,
+        privacyVersion,
+    } = req.body
 
     try {
+        const userId = req.auth?.payload?.sub || auth0LoginId;
         const user = {
             email,
             name,
@@ -353,7 +446,18 @@ app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
             createdAt: Timestamp.now()
         }
 
-        await createUser({ user });
+        const created = await createUser({ user });
+        if (created) {
+            recordInstallation();
+        }
+
+        if (termsVersion || privacyVersion) {
+            acceptPolicyDocuments({
+                userId,
+                termsVersion,
+                privacyVersion,
+            });
+        }
 
         return res.status(200).json({ success: true });
     } catch (err) {
@@ -595,17 +699,91 @@ app.post('/community/build/:buildId/reaction', jwtCheck, asyncHandler(async (req
     const userId = req.auth?.payload?.sub;
     const buildId = req.params.buildId;
     const reaction = req.body?.reaction;
+    const buildOwnerUserId = req.body?.buildOwnerUserId;
 
     if (!userId || !buildId) {
         return res.status(400).json({ error: 'userId and buildId are required' });
     }
 
     try {
-        const result = recordBuildReaction({ userId, buildId, reaction });
+        const result = recordBuildReaction({
+            userId,
+            buildId,
+            reaction,
+            buildOwnerUserId,
+        });
         return res.json(result);
     } catch (error) {
         return res.status(400).json({ error: error.message || 'Failed to record reaction.' });
     }
+}));
+
+/**
+ * Return reward balance and recent reaction anti-fraud events for the user.
+ */
+app.get('/community/rewards', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const limit = Number(req.query.limit);
+    return res.json({
+        balance: getRewardBalance(userId),
+        recentReactionEvents: getReactionEvents({
+            limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+    });
+}));
+
+/**
+ * Create or return the caller's referral code.
+ */
+app.post('/community/referral/code', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    try {
+        const code = createReferralCode({ userId });
+        return res.status(201).json({ code });
+    } catch (error) {
+        return res.status(400).json({ error: error.message || 'Failed to create referral code.' });
+    }
+}));
+
+/**
+ * Redeem a referral code and apply entitlement credits.
+ */
+app.post('/community/referral/redeem', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    const code = req.body?.code;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    try {
+        const redemption = redeemReferralCode({ userId, code });
+        return res.json({ redemption });
+    } catch (error) {
+        return res.status(400).json({ error: error.message || 'Failed to redeem referral code.' });
+    }
+}));
+
+/**
+ * Return referral summary and entitlement state for the caller.
+ */
+app.get('/community/referral/summary', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    return res.json({
+        summary: getReferralSummary(userId),
+        entitlements: getUserEntitlements(userId),
+    });
 }));
 
 /**
@@ -716,17 +894,79 @@ app.get('/user/policy/acceptance', jwtCheck, asyncHandler(async (req, res) => {
  */
 app.post('/user/subscription/ticket', jwtCheck, asyncHandler(async (req, res) => {
     const userId = req.auth?.payload?.sub;
-    const { type, reason } = req.body || {};
+    const {
+        type,
+        reason,
+        purchasedAt,
+        usagePercent,
+        previousRefundCount,
+    } = req.body || {};
 
     if (!userId) {
         return res.status(400).json({ error: 'userId is required' });
     }
 
     try {
+        let refundEligibility = null;
+        if (String(type || '').toLowerCase() === 'refund') {
+            refundEligibility = evaluateRefundEligibility({
+                purchasedAt,
+                usagePercent,
+                previousRefundCount,
+            });
+
+            if (!refundEligibility.eligible) {
+                return res.status(422).json({
+                    error: refundEligibility.reason,
+                    refundEligibility,
+                });
+            }
+        }
+
         const ticket = createSubscriptionTicket({ userId, type, reason });
-        return res.status(201).json({ ticket });
+        if (String(type || '').toLowerCase() === 'cancel') {
+            setRenewalPreference({ userId, autoRenew: false });
+        }
+
+        return res.status(201).json({ ticket, refundEligibility });
     } catch (error) {
         return res.status(400).json({ error: error.message || 'Failed to create ticket.' });
+    }
+}));
+
+/**
+ * Return renewal preference for authenticated user.
+ */
+app.get('/user/subscription/renewal', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    return res.json({
+        renewal: getRenewalPreference(userId),
+    });
+}));
+
+/**
+ * Update renewal preference for authenticated user.
+ */
+app.put('/user/subscription/renewal', jwtCheck, asyncHandler(async (req, res) => {
+    const userId = req.auth?.payload?.sub;
+    const { autoRenew, currentPeriodEnd } = req.body || {};
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+    }
+
+    try {
+        const renewal = setRenewalPreference({
+            userId,
+            autoRenew,
+            currentPeriodEnd,
+        });
+        return res.json({ renewal });
+    } catch (error) {
+        return res.status(400).json({ error: error.message || 'Failed to update renewal preference.' });
     }
 }));
 
@@ -797,6 +1037,8 @@ app.post('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => 
 
     try {
         await createUsersSession({ userId, sessionId, sessionStart });
+        const snapshot = getOpsDashboardSnapshot();
+        setActiveSessions({ count: snapshot.activeSessions + 1 });
 
         return res.status(200).json({ success: true });
     } catch (err) {
@@ -821,6 +1063,10 @@ app.put('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => {
 
     try {
         await updateUsersSession({ userId, sessionId, session: sessionWithTimestamp });
+        if (session?.status === 'ended' || session?.status === 'stopped' || session?.exit_code !== undefined) {
+            const snapshot = getOpsDashboardSnapshot();
+            setActiveSessions({ count: Math.max(0, snapshot.activeSessions - 1) });
+        }
 
         return res.status(200).json({ success: true });
     } catch (err) {
@@ -850,38 +1096,68 @@ app.post('/user/session/:sessionId/log', jwtCheck, asyncHandler(async (req, res)
     }
 }));
 
-app.post('/stripe/create-checkout-session', asyncHandler(async (req, res) => {
+app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, res) => {
     const CHECKOUT_URL = process.env.NODE_ENV === 'production' ? `https://${process.env.DOMAIN}` : 'http://localhost:5173';
+    const userId = req.auth?.payload?.sub;
+    const existingAcceptance = userId ? getPolicyAcceptance(userId) : null;
 
-    // Map tier → Stripe product
+    // Map SKU → Stripe product id
     const productMap = {
-        starter: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
-        pro: process.env.STRIPE_PRODUCT_ID_PRO_TIER,
-        admin: process.env.STRIPE_PRODUCT_ID_ADMIN_TIER
+        starter_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
+        pro_monthly: process.env.STRIPE_PRODUCT_ID_PRO_TIER,
+        admin_monthly: process.env.STRIPE_PRODUCT_ID_ADMIN_TIER,
     };
 
-    const { username, tier } = req.body;
+    const { username, tier, skuCode, termsVersion, privacyVersion } = req.body || {};
+    const checkoutSku = resolveCheckoutSku({ skuCode, tier });
 
-    if (!productMap[tier]) {
-        return res.status(400).json({ error: 'Invalid tier selection' });
+    if (!checkoutSku || checkoutSku.tier === 'free') {
+        return res.status(400).json({ error: 'Invalid SKU selection' });
+    }
+
+    const resolvedTermsVersion = termsVersion || existingAcceptance?.termsVersion;
+    const resolvedPrivacyVersion = privacyVersion || existingAcceptance?.privacyVersion;
+    if (!resolvedTermsVersion || !resolvedPrivacyVersion) {
+        return res.status(400).json({
+            error: 'Terms and privacy acceptance is required before checkout.',
+        });
+    }
+
+    if (termsVersion && privacyVersion && userId) {
+        acceptPolicyDocuments({
+            userId,
+            termsVersion,
+            privacyVersion,
+        });
+    }
+
+    if (!productMap[checkoutSku.code]) {
+        return res.status(400).json({ error: `Missing Stripe product mapping for SKU "${checkoutSku.code}".` });
     }
 
     try {
         const products = await stripe.products.list({ limit: 100 });
-        const product = products.data.find(p => p.id === productMap[tier]);
+        const product = products.data.find(p => p.id === productMap[checkoutSku.code]);
         const price = product?.default_price;
 
         if (!price) throw new Error('No price attached to product');
 
         const session = await stripe.checkout.sessions.create({
-            mode: 'subscription',
+            mode: checkoutSku.kind === 'one_time' ? 'payment' : 'subscription',
             line_items: [{ price, quantity: 1 }],
             success_url: `${CHECKOUT_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
             cancel_url: `${CHECKOUT_URL}/checkout/cancel`,
-            metadata: { username, tier }
+            metadata: {
+                username,
+                tier: checkoutSku.tier,
+                skuCode: checkoutSku.code,
+                userId,
+                termsVersion: resolvedTermsVersion,
+                privacyVersion: resolvedPrivacyVersion,
+            },
         });
 
-        return res.json({ url: session.url });
+        return res.json({ url: session.url, sku: checkoutSku });
     } catch (err) {
         console.error(`❌ Stripe session error: ${err.message}`);
         return res.status(500).json({ error: 'Could not create checkout session' });
@@ -894,25 +1170,51 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
         expand: ['subscription'],
     });
 
-    const customerEmail = session.customer_email;
-    const productId = session.subscription.plan.product;
+    const metadataTier = resolveTier(session.metadata?.tier || 'free');
+    const skuCode = session.metadata?.skuCode || null;
+    const userId = req.auth.payload.sub;
 
-    // Map Stripe price IDs to tiers
-    const tier = {
-        [process.env.STRIPE_PRODUCT_ID_STARTER_TIER]: 'starter',
-        [process.env.STRIPE_PRODUCT_ID_PRO_TIER]: 'pro',
-        [process.env.STRIPE_PRODUCT_ID_ADMIN_TIER]: 'admin',
-    }[productId] || 'free';
+    const termsVersion = session.metadata?.termsVersion;
+    const privacyVersion = session.metadata?.privacyVersion;
+    const existingAcceptance = getPolicyAcceptance(userId);
+    const resolvedTermsVersion = termsVersion || existingAcceptance?.termsVersion;
+    const resolvedPrivacyVersion = privacyVersion || existingAcceptance?.privacyVersion;
 
-    console.log(`Updating user tier customerEmail: `, customerEmail)
-    console.log(`Updating user tier: `, req.auth.payload.sub)
-    console.log(`Updating user tier: `, tier)
+    if (!resolvedTermsVersion || !resolvedPrivacyVersion) {
+        return res.status(400).json({
+            error: 'Checkout confirmation requires terms/privacy acceptance metadata.',
+        });
+    }
 
-    const user = await getUserById({ userId: req.auth.payload.sub });
+    acceptPolicyDocuments({
+        userId,
+        termsVersion: resolvedTermsVersion,
+        privacyVersion: resolvedPrivacyVersion,
+    });
 
-    await updateUserTier({ userId: user.id, tier });
+    const user = await getUserById({ userId });
+    await updateUserTier({ userId: user.id, tier: metadataTier });
 
-    res.json({ status: 'success', tier });
+    if (session.subscription && typeof session.subscription === 'object') {
+        const periodEndUnix = Number(session.subscription.current_period_end || 0);
+        const currentPeriodEnd = periodEndUnix > 0
+            ? new Date(periodEndUnix * 1000).toISOString()
+            : null;
+        const autoRenew = !Boolean(session.subscription.cancel_at_period_end);
+        setRenewalPreference({
+            userId,
+            autoRenew,
+            currentPeriodEnd,
+        });
+    }
+
+    res.json({
+        status: 'success',
+        tier: metadataTier,
+        skuCode,
+        acceptance: getPolicyAcceptance(userId),
+        renewal: getRenewalPreference(userId),
+    });
 }))
 
 app.post('/ai-get-structure', asyncHandler(async (req, res) => {
@@ -930,6 +1232,13 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     const modelRoute = getTierModelRoute(tier);
     const usageKey = resolveAiUsageKey(req, tier);
     const canaryVariantEnabled = isInCanaryRollout({ usageKey });
+    recordAbuseSignal({
+        userKey: usageKey,
+        channel: 'build',
+        signal: 'build_request',
+        severity: 'low',
+        metadata: { tier },
+    });
 
     if (!tierFeaturePolicy.allowBuilds) {
         return res.status(403).json({
@@ -948,23 +1257,39 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
                 moderationViolation,
             },
         });
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'chat',
+            signal: 'moderation_block',
+            severity: 'high',
+            metadata: { moderationViolation },
+        });
         return res.status(400).json({
             error: 'Prompt could not be processed due to safety policy.',
         });
     }
 
     recordAiRequestStart();
+    setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
     try {
         reserveBuildQuota({
             userKey: usageKey,
             tierFeaturePolicy,
         });
     } catch (quotaError) {
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'build',
+            signal: 'build_quota_rejected',
+            severity: 'medium',
+            metadata: { tier },
+        });
         recordAiRequestEnd({
             success: false,
             queueRejected: true,
             latencyMs: Date.now() - requestStartedAtMs,
         });
+        setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
         return res.status(429).json({ error: quotaError.message });
     }
 
@@ -986,11 +1311,19 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     });
 
     if (estimatedInputTokens > tierPolicy.maxInputTokensPerRequest) {
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'api',
+            signal: 'request_input_too_large',
+            severity: 'medium',
+            metadata: { estimatedInputTokens, tier },
+        });
         recordAiRequestEnd({
             success: false,
             blockedPlan: true,
             latencyMs: Date.now() - requestStartedAtMs,
         });
+        setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
         return res.status(400).json({
             error: `Input too large for tier "${tier}". Reduce prompt/context size.`,
         });
@@ -1000,20 +1333,33 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     let usageFinalized = false;
     let executorAttempts = 0;
     let planValidationHadFailures = false;
+    let overageReservation = { requestOverage: 0, inputOverageTokens: 0, outputOverageTokens: 0 };
+    let overageFinalization = { requestOverage: 0, inputOverageTokens: 0, outputOverageTokens: 0 };
+    let overageLedger = null;
+    let suspiciousUsage = false;
 
     try {
-        reserveUsage({
+        overageReservation = reserveUsage({
             userKey: usageKey,
             estimatedInputTokens,
             tierPolicy,
         });
+        setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
         usageReserved = true;
     } catch (usageError) {
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'api',
+            signal: 'usage_quota_rejected',
+            severity: 'medium',
+            metadata: { tier },
+        });
         recordAiRequestEnd({
             success: false,
             queueRejected: true,
             latencyMs: Date.now() - requestStartedAtMs,
         });
+        setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
         return res.status(429).json({ error: usageError.message });
     }
 
@@ -1116,6 +1462,19 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 }
 
                 planValidationHadFailures = true;
+                recordBlockedPlacement({
+                    count: Math.max(1, finalValidation.errors?.length || 1),
+                });
+                recordAbuseSignal({
+                    userKey: usageKey,
+                    channel: 'build',
+                    signal: 'plan_validation_failed',
+                    severity: 'medium',
+                    metadata: {
+                        tier,
+                        errorCount: finalValidation.errors?.length || 0,
+                    },
+                });
                 for (const auditEvent of finalValidation.audits) {
                     recordSecurityAuditEvent({
                         type: auditEvent.type,
@@ -1132,6 +1491,13 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 }
             } catch (parseError) {
                 planValidationHadFailures = true;
+                recordAbuseSignal({
+                    userKey: usageKey,
+                    channel: 'build',
+                    signal: 'executor_json_parse_failed',
+                    severity: 'medium',
+                    metadata: { tier },
+                });
                 if (attempt < maxExecutorAttempts) {
                     await sleep(120 * attempt);
                     continue;
@@ -1163,13 +1529,21 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
         const estimatedOutputTokens = estimateTokenCountFromText(normalizedBlocksAndTags);
 
         try {
-            finalizeUsage({
+            overageFinalization = finalizeUsage({
                 userKey: usageKey,
                 estimatedOutputTokens,
                 tierPolicy,
             });
             usageFinalized = true;
+            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
         } catch (usageError) {
+            recordAbuseSignal({
+                userKey: usageKey,
+                channel: 'api',
+                signal: 'usage_output_rejected',
+                severity: 'medium',
+                metadata: { tier },
+            });
             recordAiRequestEnd({
                 success: false,
                 queueRejected: true,
@@ -1177,7 +1551,39 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 retried: Math.max(0, executorAttempts - 1),
                 blockedPlan: planValidationHadFailures,
             });
+            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
+            setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
             return res.status(429).json({ error: usageError.message });
+        }
+
+        const totalOverageInputTokens = overageReservation.inputOverageTokens + overageFinalization.inputOverageTokens;
+        const totalOverageOutputTokens = overageReservation.outputOverageTokens + overageFinalization.outputOverageTokens;
+        const totalOverageRequests = overageReservation.requestOverage + overageFinalization.requestOverage;
+        if (supportsMeteredOverage(tierPolicy) && (
+            totalOverageInputTokens > 0 ||
+            totalOverageOutputTokens > 0 ||
+            totalOverageRequests > 0
+        )) {
+            overageLedger = recordOverageUsage({
+                userKey: usageKey,
+                tier,
+                inputOverageTokens: totalOverageInputTokens,
+                outputOverageTokens: totalOverageOutputTokens,
+                overageRequests: totalOverageRequests,
+            });
+            suspiciousUsage = totalOverageInputTokens + totalOverageOutputTokens >= 200000;
+            recordAbuseSignal({
+                userKey: usageKey,
+                channel: 'api',
+                signal: 'metered_overage_usage',
+                severity: suspiciousUsage ? 'high' : 'medium',
+                metadata: {
+                    tier,
+                    totalOverageInputTokens,
+                    totalOverageOutputTokens,
+                    totalOverageRequests,
+                },
+            });
         }
 
         const metering = recordUsageMetering({
@@ -1186,6 +1592,11 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
             inputTokens: estimatedInputTokens,
             outputTokens: estimatedOutputTokens,
         });
+        const estimatedTokenBurnUsd = (
+            (estimatedInputTokens * 0.30) +
+            (estimatedOutputTokens * 0.60)
+        ) / 1_000_000;
+        recordTokenBurn({ usd: estimatedTokenBurnUsd });
 
         const marginAlerts = evaluateBreakEvenAlerts({ month: metering.month });
         const schematic = includeSchematic === true
@@ -1200,7 +1611,9 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
             retried: Math.max(0, executorAttempts - 1),
             latencyMs: Date.now() - requestStartedAtMs,
             blockedPlan: planValidationHadFailures,
+            suspiciousUsage,
         });
+        setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
 
         return res.json({
             blocksAndTags: normalizedBlocksAndTags,
@@ -1222,6 +1635,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 usage: getUsageSnapshot(usageKey),
                 buildUsage: getBuildUsageSnapshot(usageKey),
                 metering,
+                overage: overageLedger,
                 validation: {
                     stats: finalValidation.stats,
                     warnings: finalValidation.warnings,
@@ -1233,14 +1647,25 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
     } catch (err) {
         if (usageReserved && !usageFinalized) {
             releaseInFlightSlot(usageKey);
+            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
         }
         recordBuildFailure({ userKey: usageKey });
+        recordCrash();
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'api',
+            signal: 'ai_request_failed',
+            severity: 'high',
+            metadata: { tier },
+        });
         recordAiRequestEnd({
             success: false,
             retried: Math.max(0, executorAttempts - 1),
             latencyMs: Date.now() - requestStartedAtMs,
             blockedPlan: planValidationHadFailures,
+            suspiciousUsage,
         });
+        setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
         logger.error(`Failed to generate structure for tier ${tier}. ${(err && err.stack) || err}`, {
             tier,
             usageKey,
@@ -1304,7 +1729,12 @@ app.get('/admin/ops-dashboard', asyncHandler(async (req, res) => {
  * Return operations alerts derived from request/failure metrics.
  */
 app.get('/admin/ops-alerts', asyncHandler(async (req, res) => {
-    return res.json(evaluateOpsAlerts());
+    const evaluation = evaluateOpsAlerts();
+    const incidents = evaluateIncidentNotifications({ alerts: evaluation.alerts });
+    return res.json({
+        ...evaluation,
+        incidents,
+    });
 }));
 
 /**
@@ -1340,6 +1770,108 @@ app.get('/admin/analytics/attribution', asyncHandler(async (req, res) => {
             limit: Number.isFinite(limit) ? limit : undefined,
         }),
     });
+}));
+
+/**
+ * Return referral redemption events for admin analytics.
+ */
+app.get('/admin/analytics/referrals', asyncHandler(async (req, res) => {
+    const limit = Number(req.query.limit);
+    return res.json({
+        events: getReferralEvents({
+            limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+    });
+}));
+
+/**
+ * Return overage billing report.
+ */
+app.get('/admin/overage-report', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    return res.json({
+        month: month || null,
+        rows: getOverageReport({ month }),
+    });
+}));
+
+/**
+ * Return abuse analytics summary for chat/build/api patterns.
+ */
+app.get('/admin/abuse-analytics', asyncHandler(async (req, res) => {
+    const hours = Number(req.query.hours);
+    const limit = Number(req.query.limit);
+    return res.json(getAbuseAnalytics({
+        hours: Number.isFinite(hours) ? hours : undefined,
+        limit: Number.isFinite(limit) ? limit : undefined,
+    }));
+}));
+
+/**
+ * Record an evaluation harness run for regression tracking.
+ */
+app.post('/admin/evaluation/run', asyncHandler(async (req, res) => {
+    const {
+        suite,
+        modelVariant,
+        qualityScore,
+        latencyScore,
+        safetyScore,
+        notes,
+    } = req.body || {};
+
+    try {
+        const run = recordEvaluationRun({
+            suite,
+            modelVariant,
+            qualityScore,
+            latencyScore,
+            safetyScore,
+            notes,
+        });
+        return res.status(201).json({ run });
+    } catch (error) {
+        return res.status(400).json({ error: error.message || 'Failed to record evaluation run.' });
+    }
+}));
+
+/**
+ * Return evaluation harness report and regression summary.
+ */
+app.get('/admin/evaluation', asyncHandler(async (req, res) => {
+    const suite = typeof req.query.suite === 'string' ? req.query.suite : undefined;
+    const limit = Number(req.query.limit);
+    return res.json(getEvaluationReport({
+        suite,
+        limit: Number.isFinite(limit) ? limit : undefined,
+    }));
+}));
+
+/**
+ * Return tracked incidents and associated playbooks.
+ */
+app.get('/admin/incidents', asyncHandler(async (req, res) => {
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const limit = Number(req.query.limit);
+    return res.json({
+        incidents: getIncidents({
+            status: status === 'active' || status === 'resolved' ? status : undefined,
+            limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+        playbooks: getIncidentPlaybooks(),
+    });
+}));
+
+/**
+ * Resolve a tracked incident by id.
+ */
+app.post('/admin/incidents/:incidentId/resolve', asyncHandler(async (req, res) => {
+    const incidentId = req.params.incidentId;
+    const resolved = resolveIncident({ incidentId });
+    if (!resolved) {
+        return res.status(404).json({ error: 'Incident not found.' });
+    }
+    return res.json({ incident: resolved });
 }));
 
 /**

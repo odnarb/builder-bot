@@ -54,6 +54,11 @@ npm test
   - `blocksAndTags` (legacy compatibility)
   - optional `schematic` artifact when `includeSchematic: true`
 - `GET /api/admin/ops-dashboard`, `GET /api/admin/ops-alerts`
+- `GET /api/admin/incidents`, `POST /api/admin/incidents/:incidentId/resolve`
+- `POST /api/admin/evaluation/run`, `GET /api/admin/evaluation`
+- `GET /api/admin/abuse-analytics`, `GET /api/admin/overage-report`
 - `GET /api/admin/security-audits`
+- `GET /api/admin/analytics/referrals`, `GET /api/admin/analytics/attribution`
 - `GET /api/user/builds`, `GET /api/user/build/:buildId`
-- community/policy endpoints for account linking, phrase packs, marketplace, attribution, cancellation/refund tickets, and parental controls.
+- `GET /api/config/skus` for active checkout SKU catalog (Starter/Pro/Admin monthly)
+- community/policy endpoints for account linking, reactions/rewards, referrals/entitlements, phrase packs, marketplace, attribution, cancellation/refund tickets, renewal preferences, and parental controls.
