@@ -94,9 +94,9 @@ Is this clear?
 - [x] Add per-tier request quotas and hard stops when cap is reached. (implemented on `/ai-get-structure`)
 - [x] Add per-tier concurrency controls (queue slots and rejection behavior). (implemented on `/ai-get-structure`)
 - [x] Add per-tier model routing (lower-cost models on Free/Starter, higher capability for Pro/Admin). (hybrid planner/executor route with fallback)
-- [ ] Add usage metering tables for `input_tokens`, `output_tokens`, `api_cost`, `infra_cost`, `total_cost`, `gross_margin`.
-- [ ] Add monthly margin report endpoint/job by tier (`revenue`, `cost`, `raw_profit`, `margin_percent`).
-- [ ] Add break-even monitors and alerts when projected margin drops below threshold.
+- [x] Add usage metering tables for `input_tokens`, `output_tokens`, `api_cost`, `infra_cost`, `total_cost`, `gross_margin`. (implemented in-memory in `apps/api/utils/margin-metering.js` and populated by `/ai-get-structure`)
+- [x] Add monthly margin report endpoint/job by tier (`revenue`, `cost`, `raw_profit`, `margin_percent`). (endpoint: `GET /admin/margin-report`)
+- [x] Add break-even monitors and alerts when projected margin drops below threshold. (implemented in `evaluateBreakEvenAlerts`, exposed by `GET /admin/margin-alerts`)
 
 ## Phase 1: World-Context Injection + Token Control (P0)
 - [x] Add server-side context pipeline: `ContextBuilder -> Compression -> TierGate -> TokenEstimator -> OpenAI`. (implemented in `/ai-get-structure`)
@@ -171,4 +171,7 @@ Is this clear?
 - `2026-02-20 Implementation Pass 1`: updated bot to send world context with build prompts.
 - `2026-02-20 Implementation Pass 1`: updated plan UI pricing to Pro `12.99` and Admin `24.99`.
 - `2026-02-20 Implementation Pass 1`: aligned free build cap enforcement to `50` blocks in bot command routing.
+- `2026-02-20 Implementation Pass 2`: added in-memory margin metering tables for per-tier token/cost/revenue tracking in `apps/api/utils/margin-metering.js`.
+- `2026-02-20 Implementation Pass 2`: added monthly economics reporting endpoint `GET /admin/margin-report` and diagnostics endpoint `GET /admin/usage-metering`.
+- `2026-02-20 Implementation Pass 2`: added threshold-based break-even alert monitor with endpoint `GET /admin/margin-alerts`.
 - Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.

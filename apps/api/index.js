@@ -37,6 +37,14 @@ import {
     releaseInFlightSlot,
     reserveUsage,
 } from './utils/token-governor.js';
+import {
+    evaluateBreakEvenAlerts,
+    getBreakEvenAlerts,
+    getMonthlyMarginReport,
+    getUsageMeteringRows,
+    recordUsageMetering,
+} from './utils/margin-metering.js';
+import logger from './utils/logger.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
     apiVersion: '2024-04-10',
@@ -602,6 +610,15 @@ Rules:
             return res.status(429).json({ error: usageError.message });
         }
 
+        const metering = recordUsageMetering({
+            userKey: usageKey,
+            tier,
+            inputTokens: estimatedInputTokens,
+            outputTokens: estimatedOutputTokens,
+        });
+
+        const marginAlerts = evaluateBreakEvenAlerts({ month: metering.month });
+
         return res.json({
             blocksAndTags: normalizedBlocksAndTags,
             meta: {
@@ -614,15 +631,61 @@ Rules:
                 estimatedInputTokens,
                 estimatedOutputTokens,
                 usage: getUsageSnapshot(usageKey),
+                metering,
+                marginAlertsTriggered: marginAlerts.triggered.length,
             },
         });
     } catch (err) {
         if (!usageFinalized) {
             releaseInFlightSlot(usageKey);
         }
-        console.error('❌ AI structure error:', err.stack || err);
+        logger.error(`Failed to generate structure for tier ${tier}. ${(err && err.stack) || err}`, {
+            tier,
+            usageKey,
+            estimatedInputTokens,
+        });
         return res.status(500).json({ error: 'Failed to generate structure' });
     }
+}));
+
+/**
+ * Return per-tier usage metering rows for a month.
+ * Query params:
+ * - month (optional): `YYYY-MM`, defaults to current UTC month.
+ */
+app.get('/admin/usage-metering', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const rows = getUsageMeteringRows({ month });
+    const resolvedMonth = rows[0]?.month || month || null;
+    return res.json({ month: resolvedMonth, rows });
+}));
+
+/**
+ * Return monthly margin report grouped by tier.
+ * Query params:
+ * - month (optional): `YYYY-MM`, defaults to current UTC month.
+ * - thresholdPercent (optional): break-even alert threshold.
+ */
+app.get('/admin/margin-report', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const thresholdPercent = Number(req.query.thresholdPercent);
+
+    const report = getMonthlyMarginReport({
+        month,
+        thresholdPercent: Number.isFinite(thresholdPercent) ? thresholdPercent : undefined,
+    });
+
+    return res.json(report);
+}));
+
+/**
+ * Return stored break-even alerts for a month.
+ * Query params:
+ * - month (optional): `YYYY-MM`, defaults to current UTC month.
+ */
+app.get('/admin/margin-alerts', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    return res.json(getBreakEvenAlerts({ month }));
 }));
 
 app.get('/', asyncHandler(async (req, res) => {
