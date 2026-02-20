@@ -5,7 +5,7 @@ const { goals } = pkg;
 
 export async function executeCommands({ bot, buildId, commands }) {
   const stepsLog = []
-  let buildSuccess = false
+  let buildSuccess = true
 
   for (const step of commands) {
     if (step.type === 'move_to') {
@@ -22,10 +22,13 @@ export async function executeCommands({ bot, buildId, commands }) {
 
     } else if (typeof step.block === 'string') {
       const blockName = step.block.replace(/^minecraft:/, '');
-      await placeBlockWithOverwrite(bot, new Vec3(step.x, step.y, step.z), blockName, {
+      const placed = await placeBlockWithOverwrite(bot, new Vec3(step.x, step.y, step.z), blockName, {
         allowOverwrite: true,
         stepsLog
       });
+      if (!placed) {
+        buildSuccess = false
+      }
     } else {
       console.warn('⚠️ Unknown instruction:', step);
       stepsLog.push({ type: 'error', error: 'Unknown instruction', ...step });

@@ -112,8 +112,13 @@ export function startBotServer({ bot, commander }) {
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {
-    const messageIsFromCommander = bot.players[username].uuid === commander.uuid;
-    const messageIsFromBot = bot.entity.username === bot.players[username].username;
+    const player = bot.players[username];
+    if (!player) {
+      return;
+    }
+
+    const messageIsFromCommander = player.uuid === commander.uuid;
+    const messageIsFromBot = bot.entity.username === player.username;
 
     if (messageIsFromCommander || messageIsFromBot) {
       const payload = {
@@ -133,4 +138,3 @@ export function startBotServer({ bot, commander }) {
 
   });
 }
-

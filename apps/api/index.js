@@ -132,10 +132,7 @@ app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
             return res.status(400).json({ error: 'Invalid tier selected' });
         }
 
-        await db.collection('users').doc(userId).set(
-            { tier },
-            { merge: true } // ✅ Only update tier field
-        );
+        await updateUserTier({ userId, tier });
 
         res.json({ status: 'updated', tier });
     } catch (err) {

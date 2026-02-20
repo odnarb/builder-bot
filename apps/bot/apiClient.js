@@ -17,11 +17,13 @@ function handleApiError(res, context = '') {
 
 // 🧠 Ask ChatGPT for block structure
 export async function getStructureAndTagsFromAI(message) {
-    const res = await fetch(`${process.env.API_URL}/api/ai-get-structure`, {
+    const res = await fetch(`${API_URL}/api/ai-get-structure`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ message }),
     });
+
+    if (!res.ok) return handleApiError(res, 'Generate structure');
 
     const data = await res.json();
     return data.blocksAndTags;
@@ -33,7 +35,7 @@ export async function getUserTier() {
         headers: authHeaders(),
     });
 
-    if (!res.ok) return handleApiError(res, 'Update build');
+    if (!res.ok) return handleApiError(res, 'Get user tier');
 
     return res.json();
 }

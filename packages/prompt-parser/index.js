@@ -1,6 +1,11 @@
 // packages/prompt-parser/index.js
 
 import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const mediumHouseTemplatePath = path.join(currentDir, 'medium-house-template.json')
 
 export function parsePrompt(prompt) {
   let structure = [];
@@ -46,8 +51,8 @@ export function parsePrompt(prompt) {
   }
 
   if (lower.includes('medium house')) {
-    const mediumHosueRaw = fs.readFileSync('./packages/prompt-parser/medium-house-template.json')
-    return JSON.parse(mediumHosueRaw)
+    const mediumHouseRaw = fs.readFileSync(mediumHouseTemplatePath, 'utf8')
+    return JSON.parse(mediumHouseRaw)
   }
 
   if (lower.includes('house')) {

@@ -1,11 +1,15 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import Stripe from 'stripe';
 
 import { getUserByEmail, updateUserTier } from './core/firestore/users.js';
 
 const app = express();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2024-04-10',
+});
 
-bodyParser.raw({ type: 'application/json' })
+app.use(bodyParser.raw({ type: 'application/json' }));
 
 // Stripe webhook requires raw body
 app.post('/stripe/webhook', async (req, res) => {
@@ -13,7 +17,7 @@ app.post('/stripe/webhook', async (req, res) => {
     let event;
 
     try {
-        event = stripe.webhooks.constructEvent(req.rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error(`❌ Webhook error: ${err.message}`);
         return res.status(400).send(`Webhook Error: ${err.message}`);

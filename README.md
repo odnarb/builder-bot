@@ -1,36 +1,44 @@
-# minecraft-ai-agent
-This is our minecraft ai agent
+# Minecraft AI Agent
+Natural-language Minecraft builder bot with API, Web UI, and Electron control app.
 
-## Running the minecraft server
+## Prerequisites
+- Node.js 22+
+- Java 17+ (for Paper server)
+- `k.json` in repo root for local Firestore-backed API runs
+- `.env` configured for API/Auth0/Stripe/OpenAI where needed
+
+## Install
+```bash
+npm install
+npm --prefix apps/api install
+npm --prefix apps/webui install
+```
+
+## Local Run
+1. Start Minecraft server:
+```bash
 java -Xmx2G -jar paper-1.20.4-499.jar
-
-## Running the bot
+```
+2. Start API (`http://localhost:3001`):
+```bash
+npm --prefix apps/api run dev
+```
+3. Start bot:
+```bash
 npm run dev:bot
+```
 
-## Running the AI agent
-(this currently has a single hard-coded prompt)
-npm run dev:ai
+Optional:
+- Start Web UI (`http://localhost:5173`):
+```bash
+npm --prefix apps/webui run dev
+```
+- Start Electron app (expects Web UI on port 5173):
+```bash
+npm run dev:electron
+```
 
-## Deployment
-from apps/api folder:
-
-gcloud functions deploy api \
-  --gen2 \
-  --region=us-central1 \
-  --runtime=nodejs22 \
-  --entry-point=app \
-  --source=apps/api \
-  --trigger-http \
-  --allow-unauthenticated \
-  --set-env-vars STRIPE_SECRET_KEY=xxx,STRIPE_PRODUCT_ID_STARTER_TIER=xxx,STRIPE_PRODUCT_ID_PRO_TIER=xxx,STRIPE_PRODUCT_ID_ADMIN_TIER=xxx,DOMAIN=mcbuilderbot.com
-
-
-gcloud functions deploy webui \
-  --gen2 \
-  --region=us-central1 \
-  --runtime=nodejs22 \
-  --entry-point=app \
-  --source=apps/webui \
-  --trigger-http \
-  --allow-unauthenticated \
-  --set-env-vars STRIPE_SECRET_KEY=xxx,STRIPE_PRODUCT_ID_STARTER_TIER=xxx,STRIPE_PRODUCT_ID_PRO_TIER=xxx,STRIPE_PRODUCT_ID_ADMIN_TIER=xxx,DOMAIN=mcbuilderbot.com
+## Tests
+```bash
+npm test
+```

@@ -65,7 +65,7 @@ ipcMain.on('launch-bot', (event, env) => {
     envVars.API_URL = 'http://localhost:3001'
 
     // when launching, create an env var as the session id to save builds and chats to
-    envVars.SESSION_ID = crypto.randomUUID()
+    envVars.SESSION_ID = randomUUID()
 
     envVars.AUTH_TOKEN = env.authToken
     envVars.USER_ID = env.userId
@@ -78,8 +78,7 @@ ipcMain.on('launch-bot', (event, env) => {
     event.sender.send('bot-status', { status: 'launching' });
 
     botProcess = spawn('node', ['bot/index.js'], {
-        env: envVars,
-        LANG: 'en_US.UTF-8',
+        env: { ...process.env, ...envVars, LANG: 'en_US.UTF-8' },
         cwd: path.resolve(__dirname, '..'),
         stdio: 'inherit'
     });
@@ -102,10 +101,10 @@ ipcMain.on('launch-bot', (event, env) => {
             error_timestamp: new Date().toISOString(),
             exit_location: 'electron',
             error: err.stack,
-            error_message: error.message,
+            error_message: err.message,
             exit_code: -1
         }
-        await endSession({ sessionId: envVars.SESSION_ID, session })
+        await endSession({ envVars, session })
 
         event.sender.send('bot-status', { status: 'exited', code: -1 });
         botProcess = null;
