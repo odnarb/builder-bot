@@ -1,6 +1,6 @@
 # Consolidated Roadmap (Unimplemented Items)
 Audit date: 2026-02-20  
-Sources audited: all PDFs in `docs/` (`v1` through `v5`, plus duplicated roadmap variants).
+Sources audited: all PDFs in `docs/` (`v1` through `v5`, plus duplicated roadmap variants). (these were from my Google Drive)
 
 This document lists only work that is still missing or incomplete after comparing roadmap PDFs to the current codebase.
 
