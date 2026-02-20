@@ -81,6 +81,39 @@ test('getStructureAndTagsFromAI throws for non-OK API responses', async (t) => {
   );
 });
 
+test('getStructureAndTagsFromAI returns instructionPlan when API provides normalized plan', async (t) => {
+  const originalFetch = global.fetch;
+  let requestedUrl = null;
+  let requestedOptions = null;
+
+  global.fetch = async (url, options = {}) => {
+    requestedUrl = url;
+    requestedOptions = options;
+    return {
+      ok: true,
+      json: async () => ({
+        instructionPlan: {
+          schemaVersion: '1.0',
+          actions: [{ type: 'place_block', x: 0, y: 0, z: 0, block: 'minecraft:stone' }],
+          tags: ['tower'],
+        },
+      }),
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const { getStructureAndTagsFromAI } = await importApiClientWithEnv({});
+  const result = await getStructureAndTagsFromAI({ message: 'build a tower' });
+
+  assert.equal(requestedUrl, 'http://localhost:3001/api/ai-get-structure');
+  assert.equal(requestedOptions.method, 'POST');
+  assert.equal(result.schemaVersion, '1.0');
+  assert.equal(result.actions.length, 1);
+});
+
 test('createSession validates session payload', async () => {
   const { createSession } = await importApiClientWithEnv({});
   await assert.rejects(() => createSession({}), /Missing session/);

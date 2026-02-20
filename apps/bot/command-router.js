@@ -2,6 +2,7 @@ import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
+import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { executeCommands } from './execute-commands.js';
 import {
   createUserBuild,
@@ -20,7 +21,7 @@ const USAGE_TIER_NAMES = {
 
 const USAGE_TIERS = {
   FREE: {
-    maxBlocks: 100,
+    maxBlocks: 50,
     maxPromptChars: 80,
     maxPromptWords: 30,
   },
@@ -40,6 +41,83 @@ const USAGE_TIERS = {
     maxPromptWords: 250,
   }
 };
+
+/**
+ * Build a compact context snapshot for server-side AI injection.
+ * @param {{ bot: any, commander: { tier: string }, prompt: string }} params
+ * @returns {Record<string, unknown>}
+ */
+function buildAiContext({ bot, commander, prompt }) {
+  const position = bot?.entity?.position;
+  const inventoryItems = bot?.inventory?.items?.() || [];
+
+  let nearbyBlockSummary = [];
+  try {
+    const nearby = bot.findBlocks({
+      matching: block => block.name !== 'air',
+      maxDistance: 8,
+      count: 30,
+    });
+
+    const blockCountByName = {};
+    for (const pos of nearby) {
+      const block = bot.blockAt(pos);
+      const name = block?.name || 'unknown';
+      blockCountByName[name] = (blockCountByName[name] || 0) + 1;
+    }
+
+    nearbyBlockSummary = Object.entries(blockCountByName)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12);
+  } catch {
+    nearbyBlockSummary = [];
+  }
+
+  const nearbyEntities = Object.values(bot?.entities || {})
+    .filter(entity => entity && entity.position && entity.name !== bot.entity?.username)
+    .map(entity => ({
+      name: entity.displayName || entity.name || 'unknown',
+      type: entity.type || 'unknown',
+      distance: Number(bot.entity.position.distanceTo(entity.position).toFixed(2)),
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, 8);
+
+  return {
+    identity: {
+      userId: process.env.USER_ID || process.env.COMMANDER_UUID || null,
+      tier: commander.tier,
+    },
+    bot: {
+      position: position ? {
+        x: Math.floor(position.x),
+        y: Math.floor(position.y),
+        z: Math.floor(position.z),
+      } : null,
+      health: Number(bot?.health || 0),
+      food: Number(bot?.food || 0),
+      dimension: bot?.game?.dimension || null,
+      biome: bot?.biome?.name || null,
+    },
+    inventory: inventoryItems.map(item => ({
+      name: item.name,
+      count: item.count,
+      durabilityUsed: item.durabilityUsed,
+      durability: item.durability,
+    })),
+    nearbyEntities,
+    nearbyBlocks: nearbyBlockSummary,
+    taskState: {
+      task: 'build',
+      promptChars: prompt.length,
+      promptWords: prompt.trim().split(/\s+/).length,
+    },
+    usageCounters: {
+      requestCount: 1,
+    },
+  };
+}
 
 function overTierBlockLimit({ commander, numBlocks }) {
   return (commander.tier === USAGE_TIER_NAMES.FREE && numBlocks > USAGE_TIERS.FREE.maxBlocks ||
@@ -110,6 +188,28 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     return;
   }
 
+  if (msg.startsWith('follow')) {
+    const playerEntity = bot.players[username]?.entity;
+    const distanceMatch = message.match(/follow\s*(\d+)?/i);
+    const followDistance = distanceMatch?.[1] ? Math.max(1, Math.min(12, Number(distanceMatch[1]))) : 3;
+
+    if (!playerEntity) {
+      bot.chat("I can't find you to follow right now.");
+      return;
+    }
+
+    const goal = new goals.GoalFollow(playerEntity, followDistance);
+    bot.pathfinder.setGoal(goal, true);
+    addLogEntry({
+      type: "command",
+      message: "follow",
+      data: { username, followDistance },
+      level: 0
+    });
+    bot.chat(`Following ${username} at distance ${followDistance}.`);
+    return;
+  }
+
   if (msg === 'stop') {
     bot.pathfinder.setGoal(null);
     bot.chat("Okay, stopped.");
@@ -158,10 +258,15 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     let steps = []
 
     //get the build steps from the AI
-    const rawSteps = await getStructureAndTagsFromAI(prompt)
+    const aiPayload = await getStructureAndTagsFromAI({
+      message: prompt,
+      tier: commander.tier,
+      context: buildAiContext({ bot, commander, prompt }),
+    })
 
     try {
-      const { blocks, tags } = JSON.parse(rawSteps)
+      const normalizedPlan = normalizeInstructionPlan(aiPayload)
+      const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan)
       steps = blocks
 
       await updateUserBuild({
@@ -169,7 +274,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         build: {
           event: "steps_parsed",
           blockCount: steps.length,
-          tags
+          tags,
+          actionCount: normalizedPlan.actions.length,
         }
       })
 

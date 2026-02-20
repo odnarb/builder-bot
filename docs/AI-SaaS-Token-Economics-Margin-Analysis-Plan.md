@@ -114,3 +114,12 @@ Admin → Authority tier
 
 Starter is the backbone.
 Admin must be tightly governed.
+
+# Token Economics & Margin Table (Updated Pricing)
+
+| Tier | Model | Input $/1M | Output $/1M | Avg Context Inject (tokens) | Avg User Prompt (tokens) | Max Input / Req | Max Req / Mo | Max Input / Mo | Monthly Output Cap (JSON) | Concurrency | Tools | SLA | API Cost | Infra Cost | Total Cost | Price | Raw Profit | Margin % | Break-Even Input (M tokens) | Abuse Risk | Overage Policy |
+|------|--------|------------|-------------|-----------------------------|--------------------------|----------------|--------------|----------------|---------------------------|------------|--------|------|----------|------------|-----------|-------|------------|----------|-----------------------------|------------|----------------|
+| Free | mini-low | 0.30 | 0.60 | 700 | 300 | 4k | 100 | 0.2M | {"max_output_tokens":120000} | 1 | none | best-effort | $0.13 | $0.05 | $0.18 | $0 | -$0.18 | — | N/A | High | Hard cap |
+| Starter | mini | 0.30 | 0.60 | 800 | 400 | 8k | 1,000 | 1M | {"max_output_tokens":600000} | 2 | basic | 99% | $0.66 | $0.30 | $0.96 | $4.99 | $4.03 | 81% | 5.3M | Medium | $0.002 / 1k |
+| Pro | mini-high | 0.30 | 0.60 | 1,000 | 600 | 16k | 5,000 | 5M | {"max_output_tokens":3000000} | 4 | advanced | 99.5% | $3.30 | $1.20 | $4.50 | $12.99 | $8.49 | 65% | 19.3M | Medium | $0.0025 / 1k |
+| Admin | mini-high+tools | 0.30 | 0.60 | 1,500 | 800 | 32k | 15,000 | 15M | {"max_output_tokens":9000000} | 8 | full | 99.9% | $9.90 | $3.00 | $12.90 | $24.99 | $12.09 | 48% | 38.5M | High | Metered overage |

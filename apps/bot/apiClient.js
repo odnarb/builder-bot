@@ -16,17 +16,25 @@ function handleApiError(res, context = '') {
 }
 
 // 🧠 Ask ChatGPT for block structure
-export async function getStructureAndTagsFromAI(message) {
+export async function getStructureAndTagsFromAI(payload) {
+    const requestPayload = typeof payload === 'string'
+        ? { message: payload }
+        : payload;
+
+    if (!requestPayload?.message || typeof requestPayload.message !== 'string') {
+        throw new Error('Missing message for getStructureAndTagsFromAI');
+    }
+
     const res = await fetch(`${API_URL}/api/ai-get-structure`, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(requestPayload),
     });
 
     if (!res.ok) return handleApiError(res, 'Generate structure');
 
     const data = await res.json();
-    return data.blocksAndTags;
+    return data.instructionPlan || data.blocksAndTags;
 }
 
 // Get user tier

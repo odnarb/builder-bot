@@ -1,30 +1,73 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 
 export default function PlanSelector({ onSelect }) {
+    const { getAccessTokenSilently } = useAuth0();
+    const [acceptedPolicies, setAcceptedPolicies] = useState(false);
+    const [error, setError] = useState('');
+
+    const termsVersion = '2026-02';
+    const privacyVersion = '2026-02';
+
     const choosePlan = async (tier) => {
-        if (tier === 'free') {
+        try {
+            setError('');
+            if (!acceptedPolicies) {
+                setError('Please accept Terms and Privacy before choosing a plan.');
+                return;
+            }
+
             const token = await getAccessTokenSilently();
-            await fetch('/api/user/plan', {
+            await fetch('/api/user/policy/accept', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${token}`,
+                    Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ tier }),
+                body: JSON.stringify({
+                    termsVersion,
+                    privacyVersion,
+                }),
             });
 
-            onSelect('free');
-            return;
+            if (tier === 'free') {
+                await fetch('/api/user/plan', {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ tier }),
+                });
+
+                onSelect('free');
+                return;
+            }
+
+            const res = await fetch('/api/stripe/create-checkout-session', {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    tier,
+                    termsVersion,
+                    privacyVersion,
+                }),
+            });
+
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                setError(body?.error || 'Failed to start checkout.');
+                return;
+            }
+
+            const { url } = await res.json();
+            window.location.href = url;
+        } catch (requestError) {
+            setError(requestError?.message || 'Failed to choose plan.');
         }
-
-        const res = await fetch('/api/stripe/create-checkout-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tier }),
-        });
-
-        const { url } = await res.json();
-        window.location.href = url;
     };
 
     return (
@@ -33,11 +76,24 @@ export default function PlanSelector({ onSelect }) {
                 Welcome to BuilderBot! Choose Your Plan
             </h2>
 
+            <label className="mb-4 flex max-w-2xl items-start gap-2 rounded border border-gray-700 bg-gray-800/60 p-3 text-sm text-gray-200">
+                <input
+                    type="checkbox"
+                    checked={acceptedPolicies}
+                    onChange={(event) => setAcceptedPolicies(event.target.checked)}
+                    className="mt-1"
+                />
+                <span>
+                    I accept the Terms and Privacy policy ({termsVersion}).
+                </span>
+            </label>
+            {error && <div className="mb-4 text-sm text-red-300">{error}</div>}
+
             <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                     { name: 'Starter', tier: 'starter', price: '$4.99/mo', desc: '500-block builds + templates' },
-                    { name: 'Pro', tier: 'pro', price: '$9.99/mo', desc: '2,000-block builds + AI chat', highlight: true },
-                    { name: 'Admin', tier: 'admin', price: '$19.99/mo', desc: 'Unlimited builds, full access' },
+                    { name: 'Pro', tier: 'pro', price: '$12.99/mo', desc: '2,000-block builds + AI chat', highlight: true },
+                    { name: 'Admin', tier: 'admin', price: '$24.99/mo', desc: 'Unlimited builds, full access' },
                     { name: 'Free', tier: 'free', price: '$0', desc: 'Limited to 50-block builds' },
                 ].map(plan => {
                     const isHighlight = plan.tier === 'pro';

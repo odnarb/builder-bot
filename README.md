@@ -28,6 +28,11 @@ npm --prefix apps/api run dev
 npm run dev:bot
 ```
 
+4. Optional CLI build prompt flow:
+```bash
+npm run dev -- "build a cobblestone tower" --schematic
+```
+
 Optional:
 - Start Web UI (`http://localhost:5173`):
 ```bash
@@ -42,3 +47,18 @@ npm run dev:electron
 ```bash
 npm test
 ```
+
+## New API Surfaces (Monolithic Cloud Run)
+- `POST /api/ai-get-structure` now returns:
+  - `instructionPlan` (normalized actions schema)
+  - `blocksAndTags` (legacy compatibility)
+  - optional `schematic` artifact when `includeSchematic: true`
+- `GET /api/admin/ops-dashboard`, `GET /api/admin/ops-alerts`
+- `GET /api/admin/incidents`, `POST /api/admin/incidents/:incidentId/resolve`
+- `POST /api/admin/evaluation/run`, `GET /api/admin/evaluation`
+- `GET /api/admin/abuse-analytics`, `GET /api/admin/overage-report`
+- `GET /api/admin/security-audits`
+- `GET /api/admin/analytics/referrals`, `GET /api/admin/analytics/attribution`
+- `GET /api/user/builds`, `GET /api/user/build/:buildId`
+- `GET /api/config/skus` for active checkout SKU catalog (Starter/Pro/Admin monthly)
+- community/policy endpoints for account linking, reactions/rewards, referrals/entitlements, phrase packs, marketplace, attribution, cancellation/refund tickets, renewal preferences, and parental controls.
