@@ -101,10 +101,10 @@ Is this clear?
 ## Phase 1: World-Context Injection + Token Control (P0)
 - [x] Add server-side context pipeline: `ContextBuilder -> Compression -> TierGate -> TokenEstimator -> OpenAI`. (implemented in `/ai-get-structure`)
 - [x] Implement thin snapshot (default): bot position, health/hunger, compact inventory, nearby entities, task state, short diff. (`apps/api/utils/ai-context.js`)
-- [ ] Implement thick snapshot trigger path (failures, combat, build-critical steps, explicit request).
+- [x] Implement thick snapshot trigger path (failures, combat, build-critical steps, explicit request). (`prepareContextForSnapshot` + trigger resolver in `apps/api/utils/ai-context.js`)
 - [x] Add deterministic compression (top-K summaries, float quantization, null/default stripping, canonical keys). (initial implementation)
-- [ ] Add delta encoding so repeated requests send only state changes.
-- [ ] Add world memo cache refreshed on interval (30-120s target).
+- [x] Add delta encoding so repeated requests send only state changes. (in-memory per-user delta payload with changed keys only in `prepareContextForSnapshot`)
+- [x] Add world memo cache refreshed on interval (30-120s target). (in-memory memo cache with bounded refresh interval in `prepareContextForSnapshot`)
 - [x] Enforce per-tier context size budgets before model call.
 - [x] Add AI world-context injection to `/ai-get-structure` with strict schema validation.
 
@@ -174,4 +174,7 @@ Is this clear?
 - `2026-02-20 Implementation Pass 2`: added in-memory margin metering tables for per-tier token/cost/revenue tracking in `apps/api/utils/margin-metering.js`.
 - `2026-02-20 Implementation Pass 2`: added monthly economics reporting endpoint `GET /admin/margin-report` and diagnostics endpoint `GET /admin/usage-metering`.
 - `2026-02-20 Implementation Pass 2`: added threshold-based break-even alert monitor with endpoint `GET /admin/margin-alerts`.
+- `2026-02-20 Implementation Pass 3`: added server-side context preparation pipeline (`prepareContextForSnapshot`) with explicit thick-snapshot trigger path detection for failures/combat/build-critical/explicit requests.
+- `2026-02-20 Implementation Pass 3`: added in-memory world memo cache with 30-120s bounded refresh interval and per-user delta encoding to reduce repeated context payload cost.
+- `2026-02-20 Implementation Pass 3`: integrated context diagnostics into `/ai-get-structure` response metadata and added regression tests for trigger resolution, memo refresh, and delta behavior.
 - Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.

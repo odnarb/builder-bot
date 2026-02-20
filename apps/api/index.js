@@ -30,6 +30,7 @@ import {
     buildContextSnapshot,
     estimateAiInputTokens,
     estimateTokenCountFromText,
+    prepareContextForSnapshot,
 } from './utils/ai-context.js';
 import {
     finalizeUsage,
@@ -506,7 +507,18 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     const tier = resolveTier(rawTier);
     const tierPolicy = getTierAiPolicy(tier);
     const modelRoute = getTierModelRoute(tier);
-    const contextSnapshot = buildContextSnapshot({ context, tierPolicy });
+    const usageKey = resolveAiUsageKey(req, tier);
+    const {
+        contextForSnapshot,
+        diagnostics: contextDiagnostics,
+    } = prepareContextForSnapshot({
+        usageKey,
+        context,
+    });
+    const contextSnapshot = buildContextSnapshot({
+        context: contextForSnapshot,
+        tierPolicy,
+    });
     const estimatedInputTokens = estimateAiInputTokens({
         message,
         contextSnapshot,
@@ -519,7 +531,6 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
         });
     }
 
-    const usageKey = resolveAiUsageKey(req, tier);
     try {
         reserveUsage({
             userKey: usageKey,
@@ -633,6 +644,7 @@ Rules:
                 usage: getUsageSnapshot(usageKey),
                 metering,
                 marginAlertsTriggered: marginAlerts.triggered.length,
+                contextDiagnostics,
             },
         });
     } catch (err) {
@@ -643,6 +655,7 @@ Rules:
             tier,
             usageKey,
             estimatedInputTokens,
+            contextDiagnostics,
         });
         return res.status(500).json({ error: 'Failed to generate structure' });
     }
