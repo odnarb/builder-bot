@@ -7,6 +7,7 @@ Sources audited:
 Goal: ship world-context injection without breaking SaaS unit economics, and keep every paid tier margin-positive at full-cap usage.
 
 ## Phase 0: Margin Guardrails Foundation (P0)
+- [x] Raise pro tier from 9.99 to 12.99. Raise admin tier from 19.99 to 24.99. 2/20/2026: This is done.
 - [ ] Lock canonical tier economics in code (model, input cap/request, output cap/request, requests/month, concurrency, overage policy).
 - [ ] Implement per-tier token governor middleware in API (`max_input_tokens`, `max_output_tokens`, monthly token quotas).
 - [ ] Add per-tier request quotas and hard stops when cap is reached.
