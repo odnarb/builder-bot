@@ -12,7 +12,7 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
   - app script hooks in root/API/stripe package scripts.
 - [x] Architecture boundary checker added:
   - `scripts/check-architecture-boundaries.mjs`
-  - currently warns on known API app-root escape imports during migration.
+  - currently passing clean (`[check-architecture-boundaries] OK`) with Firestore allowlist aligned to shared db adapters.
 - [~] Phase 2 logic extraction started:
   - `/ai-get-structure` orchestration moved into `apps/core/logic/ai-get-structure.js`.
   - `apps/api/routes/ai-routes.js` reduced from `707` lines to `42` lines as HTTP adapter only.
@@ -24,6 +24,16 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
 - [~] API bootstrap/context split completed:
   - moved route dependency assembly into `apps/api/app-context.js`.
   - reduced `apps/api/index.js` from `451` lines to `78` lines (bootstrap + route mounting + error handlers only).
+- [~] App context modularization completed:
+  - split `apps/api/app-context.js` into:
+    - `apps/api/context/static-route-deps.js`
+    - `apps/api/context/runtime-route-deps.js`
+  - reduced `apps/api/app-context.js` from `400` lines to `34` lines (composition only).
+- [~] Phase 3 db-layer consolidation started:
+  - moved economics persistence implementation to canonical shared db path:
+    - `apps/core/db/firestore/economics-persistence.js`
+  - converted `apps/api/utils/economics-persistence.js` into a thin compatibility re-export adapter.
+  - updated architecture boundary allowlist to point at shared db adapter path.
 - [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 2-5) and full deploy-root import cutover.
 
 ## Why This Plan Exists

@@ -22,7 +22,7 @@ const RELATIVE_IMPORT_RE = /from\s+['"](\.\.\/[^'"]+)['"]/g;
 
 const ALLOWED_FIRESTORE_FILES = new Set([
   'apps/core/firestore/users.js',
-  'apps/api/utils/economics-persistence.js',
+  'apps/core/db/firestore/economics-persistence.js',
 ]);
 
 const boundaryErrors = [];
