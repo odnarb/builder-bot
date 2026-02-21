@@ -42,6 +42,10 @@ npm --prefix apps/webui run dev
 ```bash
 npm run dev:electron
 ```
+- Start static marketing site from `apps/website` (public landing surface):
+```bash
+python3 -m http.server 8080 --directory apps/website
+```
 
 ## Tests
 ```bash
