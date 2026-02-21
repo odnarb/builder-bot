@@ -10,7 +10,7 @@ export default function PromptInput() {
     const trimmed = input.trim();
     if (!trimmed) return;
 
-    if (trimmed.startsWith('build ') || trimmed.startsWith('move ') || trimmed.startsWith('come') || trimmed.startsWith('stop')) {
+    if (trimmed.startsWith('build ') || trimmed.startsWith('move ') || trimmed.startsWith('come') || trimmed.startsWith('follow') || trimmed.startsWith('stop')) {
       sendMessage({ type: 'chat_command', message: trimmed });
     } else {
       // fallback for unknown command format

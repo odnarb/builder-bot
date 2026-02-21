@@ -5,6 +5,8 @@ const { pathfinder } = pkg;
 import { startBotServer } from './ws-server.js';
 import { handlePlayerCommand } from './command-router.js';
 import { addLogEntry, createSession, getUserTier } from './apiClient.js';
+import { resolveTier } from '../api/config/tier-policy.js';
+import { isCommanderChatSender } from './player-identity.js';
 
 //current user info
 const COMMANDER_UUID = process.env.COMMANDER_UUID || "123-123-1234"
@@ -16,9 +18,6 @@ const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
 
 //bot's name
 const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
-
-//for disallowing multiple commands to be in flight
-let handlingCommand = false
 
 async function safeAddLogEntry(log) {
   try {
@@ -55,7 +54,7 @@ try {
 const commander = {
   //master player Minecraft UUID
   uuid: process.env.COMMANDER_UUID || null,
-  tier: tierData?.tier || 'free'
+  tier: resolveTier(tierData?.tier)
 }
 
 const bot = mineflayer.createBot({
@@ -89,11 +88,9 @@ bot.on('chat', async (username, message) => {
       return;
     }
 
-    const player = Object.entries(bot.players).filter(([username, user]) => user.uuid === commander.uuid)[0]
-
     // don't allow commands from other players
-    if (player === undefined) {
-      console.log(`Ignoring chat from non-commander entity. Commander uuid is ${commander.uuid}`)
+    if (!isCommanderChatSender({ bot, commander, username })) {
+      console.log(`Ignoring chat from non-commander sender "${username}". Commander uuid is ${commander.uuid}`);
       return
     }
 
@@ -105,16 +102,7 @@ bot.on('chat', async (username, message) => {
 
     void safeAddLogEntry({ type: "chat", message, from: username, level: 0 });
 
-    //TODO: update state that lets the webUI know so that commands can't be spammed
-    // handlingCommand = true
-
-    // if (!handlingCommand) {
     await handlePlayerCommand({ commander, bot, message: finalMessage, username });
-    // } else {
-    //   bot.chat(`Sorry, I'm currently busy with the previous command.`)
-    // }
-
-    // handlingCommand = false
   } catch (error) {
     console.error(`Could not process command. ${error.stack}`)
   }

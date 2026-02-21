@@ -12,6 +12,20 @@ async function runBestEffortPersistence(label, fn) {
   }
 }
 
+function resolveFollowTargetName({ stepTarget, fallbackUsername }) {
+  const normalizedTarget = typeof stepTarget === 'string' ? stepTarget.trim() : '';
+  if (!normalizedTarget) {
+    return fallbackUsername;
+  }
+
+  const lowered = normalizedTarget.toLowerCase();
+  if (lowered === 'commander' || lowered === '@commander') {
+    return fallbackUsername;
+  }
+
+  return normalizedTarget;
+}
+
 /**
  * Execute mixed movement/build actions against the bot.
  * @param {{
@@ -67,7 +81,10 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
       }
 
     } else if (step.type === 'follow') {
-      const targetPlayerName = typeof step.target === 'string' ? step.target : username;
+      const targetPlayerName = resolveFollowTargetName({
+        stepTarget: step.target,
+        fallbackUsername: username,
+      });
       const targetEntity = bot.players[targetPlayerName]?.entity;
       const followDistance = Math.max(1, Math.min(12, Number(step.distance) || 3));
 
@@ -99,8 +116,13 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
     }
   } //end comands set
 
-  bot.chat(`📐 Build complete!`);
-  console.log(`📐 Build complete!`);
+  if (buildSuccess) {
+    bot.chat(`📐 Build complete!`);
+    console.log(`📐 Build complete!`);
+  } else {
+    bot.chat(`⚠️ Build finished with some errors. Check logs for details.`);
+    console.warn(`⚠️ Build finished with one or more command failures.`);
+  }
 
   //update build success
   const build = {
@@ -119,6 +141,11 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
       () => uploadBuildLogs({ buildId, logs: stepsLog })
     )
   }
+
+  return {
+    success: buildSuccess,
+    logs: stepsLog,
+  };
 }
 
 /**
@@ -147,7 +174,7 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
       if (skipIfAlreadyCorrect) {
         console.log(`⏭️ ${blockName} already at ${pos}`);
         stepsLog?.push({ type: 'block_already_exists', block: blockName, pos });
-        return false;
+        return true;
       }
     } else if (existing.name !== 'air' && allowOverwrite) {
       try {

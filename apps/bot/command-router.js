@@ -3,7 +3,13 @@ const { goals } = pkg;
 
 import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
+import {
+  getTierAiPolicy,
+  getTierFeaturePolicy,
+  resolveTier,
+} from '../api/config/tier-policy.js';
 import { executeCommands } from './execute-commands.js';
+import { resolveCommanderUsername } from './player-identity.js';
 import {
   createUserBuild,
   updateUserBuild,
@@ -12,35 +18,12 @@ import {
   addLogEntry
 } from './apiClient.js';
 
-const USAGE_TIER_NAMES = {
-  FREE: 'free',
-  STARTER: 'starter',
-  PRO: 'pro',
-  ADMIN: 'admin'
-};
+const BUILD_START_OFFSET = Object.freeze({ x: 2, y: 0, z: 2 });
+let buildCommandInFlight = false;
 
-const USAGE_TIERS = {
-  FREE: {
-    maxBlocks: 50,
-    maxPromptChars: 80,
-    maxPromptWords: 30,
-  },
-  STARTER: {
-    maxBlocks: 500,
-    maxPromptChars: 250,
-    maxPromptWords: 50,
-  },
-  PRO: {
-    maxBlocks: 2000,
-    maxPromptChars: 1000,
-    maxPromptWords: 150,
-  },
-  ADMIN: {
-    maxBlocks: Infinity,
-    maxPromptChars: 2000,
-    maxPromptWords: 250,
-  }
-};
+function normalizeCommanderTier(commander) {
+  return resolveTier(commander?.tier);
+}
 
 /**
  * Build a compact context snapshot for server-side AI injection.
@@ -87,7 +70,7 @@ function buildAiContext({ bot, commander, prompt }) {
   return {
     identity: {
       userId: process.env.USER_ID || process.env.COMMANDER_UUID || null,
-      tier: commander.tier,
+      tier: normalizeCommanderTier(commander),
     },
     bot: {
       position: position ? {
@@ -119,27 +102,20 @@ function buildAiContext({ bot, commander, prompt }) {
   };
 }
 
+function estimatePromptTokens(prompt) {
+  return Math.ceil(String(prompt || '').length / 4);
+}
+
 function overTierBlockLimit({ commander, numBlocks }) {
-  return (commander.tier === USAGE_TIER_NAMES.FREE && numBlocks > USAGE_TIERS.FREE.maxBlocks ||
-    commander.tier === USAGE_TIER_NAMES.STARTER && numBlocks > USAGE_TIERS.STARTER.maxBlocks ||
-    commander.tier === USAGE_TIER_NAMES.PRO && numBlocks > USAGE_TIERS.PRO.maxBlocks ||
-    commander.tier === USAGE_TIER_NAMES.ADMIN && numBlocks > USAGE_TIERS.ADMIN.maxBlocks
-  )
+  const tier = normalizeCommanderTier(commander);
+  const tierFeaturePolicy = getTierFeaturePolicy(tier);
+  return Number(numBlocks) > Number(tierFeaturePolicy.maxBlocksPerBuild);
 }
 
 function overTierPromptLimit({ commander, prompt }) {
-  const numWords = prompt.trim().split(/\s+/).length
-  const numChars = prompt.length
-  return (
-    commander.tier === USAGE_TIER_NAMES.FREE && numWords > USAGE_TIERS.FREE.maxPromptWords ||
-    commander.tier === USAGE_TIER_NAMES.FREE && numChars > USAGE_TIERS.FREE.maxPromptChars ||
-    commander.tier === USAGE_TIER_NAMES.STARTER && numWords > USAGE_TIERS.STARTER.maxPromptWords ||
-    commander.tier === USAGE_TIER_NAMES.STARTER && numChars > USAGE_TIERS.STARTER.maxPromptChars ||
-    commander.tier === USAGE_TIER_NAMES.PRO && numWords > USAGE_TIERS.PRO.maxPromptWords ||
-    commander.tier === USAGE_TIER_NAMES.PRO && numChars > USAGE_TIERS.PRO.maxPromptChars ||
-    commander.tier === USAGE_TIER_NAMES.ADMIN && numWords > USAGE_TIERS.ADMIN.maxPromptWords ||
-    commander.tier === USAGE_TIER_NAMES.ADMIN && numChars > USAGE_TIERS.ADMIN.maxPromptChars
-  )
+  const tier = normalizeCommanderTier(commander);
+  const tierAiPolicy = getTierAiPolicy(tier);
+  return estimatePromptTokens(prompt) > Number(tierAiPolicy.maxInputTokensPerRequest);
 }
 
 async function runBestEffortPersistence(label, fn) {
@@ -157,13 +133,94 @@ function fireAndForgetLogEntry(log) {
   });
 }
 
+function resolveRuntimePlayerEntity({ bot, commander, username }) {
+  const resolvedUsername = resolveCommanderUsername({
+    bot,
+    commander,
+    preferredUsername: username,
+  });
+
+  if (!resolvedUsername) {
+    return null;
+  }
+
+  return bot.players?.[resolvedUsername]?.entity || null;
+}
+
+function createCommandRunId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function logCommandLifecycle({ runId, commandType, username, state, extra = {}, level = 0 }) {
+  fireAndForgetLogEntry({
+    type: 'command_lifecycle',
+    message: state,
+    data: {
+      runId,
+      commandType,
+      username,
+      ...extra,
+    },
+    level,
+  });
+}
+
+export function isBuildCommandInFlight() {
+  return buildCommandInFlight;
+}
+
+export async function runBuildCommandSingleFlight({
+  bot,
+  username = 'Commander',
+  commandType = 'build',
+  busyMessage = "⏳ I'm already handling another build command. Please wait.",
+  run,
+}) {
+  const runId = createCommandRunId();
+  logCommandLifecycle({ runId, commandType, username, state: 'queued' });
+
+  if (buildCommandInFlight) {
+    bot.chat(busyMessage);
+    logCommandLifecycle({
+      runId,
+      commandType,
+      username,
+      state: 'rejected_busy',
+      level: 1,
+    });
+    return false;
+  }
+
+  buildCommandInFlight = true;
+  logCommandLifecycle({ runId, commandType, username, state: 'started' });
+
+  try {
+    await run({ runId });
+    logCommandLifecycle({ runId, commandType, username, state: 'finished' });
+    return true;
+  } catch (error) {
+    logCommandLifecycle({
+      runId,
+      commandType,
+      username,
+      state: 'failed',
+      extra: { error: error?.message || String(error) },
+      level: 2,
+    });
+    throw error;
+  } finally {
+    buildCommandInFlight = false;
+  }
+}
+
 export async function handlePlayerCommand({ commander, bot, message, username = 'Commander' }) {
   console.log(`⚙️ Executing: ${message} from ${username}`);
 
-  const msg = message.toLowerCase();
+  const rawMessage = String(message || '').trim();
+  const msg = rawMessage.toLowerCase();
 
   if (msg.includes('come here')) {
-    const playerEntity = bot.players[username]?.entity;
+    const playerEntity = resolveRuntimePlayerEntity({ bot, commander, username });
 
     //if a close entity found go there else try to check for coordinates in the message
     if (playerEntity) {
@@ -179,7 +236,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       bot.chat("On my way!");
     } else {
       // Match "come here x:0,y:0,z:0" using regex
-      const coordMatch = message.match(/x\s*:\s*(-?\d+)\s*,\s*y\s*:\s*(-?\d+)\s*,\s*z\s*:\s*(-?\d+)/i);
+      const coordMatch = rawMessage.match(/x\s*:\s*(-?\d+)\s*,\s*y\s*:\s*(-?\d+)\s*,\s*z\s*:\s*(-?\d+)/i);
 
       if (coordMatch) {
         const [, x, y, z] = coordMatch.map(Number);
@@ -204,8 +261,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
   }
 
   if (msg.startsWith('follow')) {
-    const playerEntity = bot.players[username]?.entity;
-    const distanceMatch = message.match(/follow\s*(\d+)?/i);
+    const playerEntity = resolveRuntimePlayerEntity({ bot, commander, username });
+    const distanceMatch = rawMessage.match(/follow\s*(\d+)?/i);
     const followDistance = distanceMatch?.[1] ? Math.max(1, Math.min(12, Number(distanceMatch[1]))) : 3;
 
     if (!playerEntity) {
@@ -235,166 +292,198 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
   }
 
   if (msg.startsWith('build ')) {
-    const prompt = msg.slice(6);
+    const prompt = rawMessage.slice(6).trim();
+    const normalizedTier = normalizeCommanderTier(commander);
 
-    //check prompt before submitting
-    if (overTierPromptLimit({ commander, prompt })) {
-      bot.chat(`❌ Sorry, your prompt is too long for your tier "${commander.tier}"...`);
-      console.warn(`⚠️ Prompt exceeded limits for tier "${commander.tier}". prompt length:${prompt.length} chars`);
-
-      fireAndForgetLogEntry({
-        type: "prompt_tier_limit",
-        message: "user",
-        data: {
-          tier: commander.tier,
-          prompt,
-          charCount: prompt.length,
-          wordCount: prompt.trim().split(/\s+/).length,
-        },
-        level: 1
-      })
-
-      return
+    if (!prompt) {
+      bot.chat('❌ Please provide a build prompt.');
+      return;
     }
 
-    bot.chat(`📐 Asking AI to generate build for: ${prompt}...`);
-    console.log(`📐 Asking AI to generate build for: ${prompt}...`);
+    await runBuildCommandSingleFlight({
+      bot,
+      username,
+      commandType: 'build',
+      run: async () => {
+        //check prompt before submitting
+        if (overTierPromptLimit({ commander, prompt })) {
+          const promptTokens = estimatePromptTokens(prompt);
+          const tierAiPolicy = getTierAiPolicy(normalizedTier);
+          bot.chat(`❌ Prompt exceeds ${normalizedTier} tier request limits (${promptTokens}/${tierAiPolicy.maxInputTokensPerRequest} est. tokens).`);
+          console.warn(`⚠️ Prompt exceeded limits for tier "${normalizedTier}". prompt length:${prompt.length} chars`);
 
-    const build = {
-      type: "build",
-      commanderUUID: process.env.COMMANDER_UUID,
-      message: prompt,
-      level: 0
-    }
-
-    //start the build and log an id
-    const buildId = await runBestEffortPersistence(
-      'Create build record',
-      () => createUserBuild({ build })
-    );
-
-    let steps = []
-
-    //get the build steps from the AI
-    const aiPayload = await getStructureAndTagsFromAI({
-      message: prompt,
-      tier: commander.tier,
-      context: buildAiContext({ bot, commander, prompt }),
-    })
-
-    try {
-      const normalizedPlan = normalizeInstructionPlan(aiPayload)
-      const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan)
-      steps = blocks
-
-      if (buildId) {
-        await runBestEffortPersistence(
-          'Update build with parsed steps metadata',
-          () => updateUserBuild({
-            buildId,
-            build: {
-              event: "steps_parsed",
-              blockCount: steps.length,
-              tags,
-              actionCount: normalizedPlan.actions.length,
-            }
-          })
-        );
-      }
-
-    } catch (error) {
-      steps = []
-      bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
-
-      //log the build error to the server
-      if (buildId) {
-        await runBestEffortPersistence(
-          'Update build with parsing error',
-          () => updateUserBuild({
-            buildId,
-            build: {
-              error: error.stack,
-              error_message: error.message
-            }
-          })
-        );
-      }
-
-      console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
-    }
-
-    bot.chat(`💾 Saving build steps...`);
-
-    //save steps to backend, later
-    if (buildId) {
-      await runBestEffortPersistence(
-        'Upload build steps',
-        () => uploadBuildSteps({ buildId, steps })
-      );
-    }
-
-    if (steps.length > 0) {
-      //check build size, if user's tier too low, reject it
-      if (overTierBlockLimit({ commander, numBlocks: steps.length })) {
-        bot.chat(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
-        console.log(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
-
-        //user hit tier limit, log this
-        fireAndForgetLogEntry({ type: "block_tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 1 })
-
-        return
-      }
-
-      // adjust our steps to be relative to the bot's position
-      const adjustedCommands = offsetStructure(steps, { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, { x: 2, y: 0, z: 2 });
-
-      //clear the inventory first before a build
-      await bot.creative.clearInventory()
-
-      bot.chat(`Giving self the materials needed for the build...`);
-
-      // 1. Extract unique blocks from the command list
-      const blockNames = [...new Set(adjustedCommands
-        .filter(step => typeof step.block === 'string')
-        .map(step => step.block.replace(/^minecraft:/, '')))];
-
-      // 2. Give all blocks to the bot ahead of time
-      for (const blockName of blockNames) {
-        try {
-          const itemId = bot.registry.itemsByName[blockName]?.id;
-          if (itemId === undefined) {
-            console.warn(`⚠️ Unknown block type: ${blockName}`);
-            continue;
-          }
-
-          if (bot.creative?.give) {
-            await bot.creative.give(itemId, 999);
-          } else {
-            bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
-            await bot.waitForTicks(20);
-          }
-
-          console.log(`✅ Gave ${blockName}`);
-        } catch (err) {
-          console.warn(`❌ Failed to give ${blockName}: ${err.message}`);
+          fireAndForgetLogEntry({
+            type: "prompt_tier_limit",
+            message: "user",
+            data: {
+              tier: normalizedTier,
+              prompt,
+              charCount: prompt.length,
+              wordCount: prompt.trim().split(/\s+/).length,
+              promptTokens,
+              maxInputTokensPerRequest: tierAiPolicy.maxInputTokensPerRequest,
+            },
+            level: 1
+          });
+          return;
         }
-      }
 
-      bot.chat(`Attempting to build...`);
+        bot.chat(`📐 Asking AI to generate build for: ${prompt}...`);
+        console.log(`📐 Asking AI to generate build for: ${prompt}...`);
 
-      //finalize the command set
-      await executeCommands({ bot, buildId, commands: adjustedCommands });
-    } else {
-      bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
-      console.log(`❌ No structure received from AI or failed to parse`);
+        const build = {
+          type: "build",
+          commanderUUID: process.env.COMMANDER_UUID,
+          message: prompt,
+          level: 0
+        };
 
-      if (buildId) {
-        await runBestEffortPersistence(
-          'Mark empty build record error',
-          () => updateUserBuild({ buildId, build: { error: "build steps array empty" } })
+        //start the build and log an id
+        const buildId = await runBestEffortPersistence(
+          'Create build record',
+          () => createUserBuild({ build })
         );
-      }
-    }
+
+        let steps = [];
+
+        //get the build steps from the AI
+        const aiPayload = await getStructureAndTagsFromAI({
+          message: prompt,
+          tier: normalizedTier,
+          context: buildAiContext({ bot, commander: { ...commander, tier: normalizedTier }, prompt }),
+        });
+
+        try {
+          const normalizedPlan = normalizeInstructionPlan(aiPayload);
+          const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan);
+          steps = blocks;
+
+          if (buildId) {
+            await runBestEffortPersistence(
+              'Update build with parsed steps metadata',
+              () => updateUserBuild({
+                buildId,
+                build: {
+                  event: "steps_parsed",
+                  blockCount: steps.length,
+                  tags,
+                  actionCount: normalizedPlan.actions.length,
+                }
+              })
+            );
+          }
+
+        } catch (error) {
+          steps = [];
+          bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
+
+          //log the build error to the server
+          if (buildId) {
+            await runBestEffortPersistence(
+              'Update build with parsing error',
+              () => updateUserBuild({
+                buildId,
+                build: {
+                  error: error.stack,
+                  error_message: error.message
+                }
+              })
+            );
+          }
+
+          console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`);
+        }
+
+        bot.chat(`💾 Saving build steps...`);
+
+        //save steps to backend, later
+        if (buildId) {
+          await runBestEffortPersistence(
+            'Upload build steps',
+            () => uploadBuildSteps({ buildId, steps })
+          );
+        }
+
+        if (steps.length > 0) {
+          const placementStepCount = steps.filter(step => typeof step.block === 'string').length;
+
+          //check build size, if user's tier too low, reject it
+          if (overTierBlockLimit({ commander, numBlocks: placementStepCount })) {
+            const maxBlocksPerBuild = getTierFeaturePolicy(normalizedTier).maxBlocksPerBuild;
+            bot.chat(`⚠️ Tier ${normalizedTier} allows up to ${maxBlocksPerBuild} blocks per build (${placementStepCount} requested).`);
+            console.log(`⚠️ User's tier (${normalizedTier}) is too low for ${placementStepCount} blocks to be placed.`);
+
+            //user hit tier limit, log this
+            fireAndForgetLogEntry({
+              type: "block_tier_limit",
+              message: "user",
+              data: {
+                tier: normalizedTier,
+                requestedPlacements: placementStepCount,
+                maxBlocksPerBuild,
+              },
+              level: 1
+            });
+
+            return;
+          }
+
+          // adjust action coordinates relative to the bot's position
+          const adjustedCommands = offsetStructure(
+            steps,
+            { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z },
+            BUILD_START_OFFSET,
+          );
+
+          //clear the inventory first before a build
+          await bot.creative.clearInventory();
+
+          bot.chat(`Giving self the materials needed for the build...`);
+
+          // 1. Extract unique blocks from the command list
+          const blockNames = [...new Set(adjustedCommands
+            .filter(step => typeof step.block === 'string')
+            .map(step => step.block.replace(/^minecraft:/, '')))];
+
+          // 2. Give all blocks to the bot ahead of time
+          for (const blockName of blockNames) {
+            try {
+              const itemId = bot.registry.itemsByName[blockName]?.id;
+              if (itemId === undefined) {
+                console.warn(`⚠️ Unknown block type: ${blockName}`);
+                continue;
+              }
+
+              if (bot.creative?.give) {
+                await bot.creative.give(itemId, 999);
+              } else {
+                bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
+                await bot.waitForTicks(20);
+              }
+
+              console.log(`✅ Gave ${blockName}`);
+            } catch (err) {
+              console.warn(`❌ Failed to give ${blockName}: ${err.message}`);
+            }
+          }
+
+          bot.chat(`Attempting to build...`);
+
+          //finalize the command set
+          await executeCommands({ bot, buildId, commands: adjustedCommands, username });
+        } else {
+          bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
+          console.log(`❌ No structure received from AI or failed to parse`);
+
+          if (buildId) {
+            await runBestEffortPersistence(
+              'Mark empty build record error',
+              () => updateUserBuild({ buildId, build: { error: "build steps array empty" } })
+            );
+          }
+        }
+      },
+    });
 
     return;
   }
