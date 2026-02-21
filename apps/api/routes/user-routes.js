@@ -3,6 +3,21 @@
  * @param {import('express').Express} app
  * @param {Record<string, any>} deps
  */
+function toSafeUserProfile(user, resolveTier) {
+    if (!user || typeof user !== 'object') {
+        return null;
+    }
+
+    return {
+        id: user.id || null,
+        email: typeof user.email === 'string' ? user.email : null,
+        name: typeof user.name === 'string' ? user.name : null,
+        picture: typeof user.picture === 'string' ? user.picture : null,
+        tier: resolveTier(user.tier || 'free'),
+        createdAt: user.createdAt || null,
+    };
+}
+
 export function registerUserRoutes(app, deps) {
     const {
         jwtCheck,
@@ -13,7 +28,6 @@ export function registerUserRoutes(app, deps) {
         getUserEntitlements,
         getReferralSummary,
         getUserOverageSnapshot,
-        getUserByEmail,
         createUser,
         nowTimestamp,
         recordInstallation,
@@ -122,26 +136,10 @@ export function registerUserRoutes(app, deps) {
     }));
 
     app.get('/user', jwtCheck, asyncHandler(async (req, res) => {
-        const email = req.query.email;
-        if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
+        const userId = req.auth?.payload?.sub;
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' });
         }
-
-        try {
-            const user = await getUserByEmail({ email });
-            if (!user) {
-                return res.status(404).json({ error: 'User not found' });
-            }
-
-            return res.json({ user });
-        } catch (err) {
-            logger.error(`❌ Failed to fetch user with email ${email}: ${err.stack}`);
-            res.status(500).json({ error: 'Internal error' });
-        }
-    }));
-
-    app.get('/user/:userId', jwtCheck, asyncHandler(async (req, res) => {
-        const userId = req.params.userId
 
         try {
             const user = await getUserById({ userId });
@@ -149,7 +147,30 @@ export function registerUserRoutes(app, deps) {
                 return res.status(404).json({ error: 'User not found' });
             }
 
-            return res.json({ user });
+            return res.json({ user: toSafeUserProfile(user, resolveTier) });
+        } catch (err) {
+            logger.error(`❌ Failed to fetch current user ${userId}: ${err.stack}`);
+            res.status(500).json({ error: 'Internal error' });
+        }
+    }));
+
+    app.get('/user/:userId', jwtCheck, asyncHandler(async (req, res) => {
+        const authUserId = req.auth?.payload?.sub;
+        const userId = req.params.userId;
+        if (!authUserId) {
+            return res.status(400).json({ error: 'userId is required' });
+        }
+        if (userId !== authUserId) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        try {
+            const user = await getUserById({ userId: authUserId });
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+
+            return res.json({ user: toSafeUserProfile(user, resolveTier) });
         } catch (err) {
             logger.error(`❌ Failed to fetch user with id ${userId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
@@ -160,21 +181,31 @@ export function registerUserRoutes(app, deps) {
         const {
             email,
             name,
-            auth0LoginId,
             picture,
             termsVersion,
             privacyVersion,
-        } = req.body
+        } = req.body || {};
 
         try {
-            const userId = req.auth?.payload?.sub || auth0LoginId;
+            const userId = req.auth?.payload?.sub;
+            const tokenEmail = typeof req.auth?.payload?.email === 'string'
+                ? req.auth.payload.email.trim().toLowerCase()
+                : '';
+            const bodyEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+            if (!userId) {
+                return res.status(401).json({ error: 'Authentication is required.' });
+            }
+            if (tokenEmail && bodyEmail && tokenEmail !== bodyEmail) {
+                return res.status(403).json({ error: 'Email claim does not match authenticated user.' });
+            }
+
             const user = {
-                email,
+                email: tokenEmail || bodyEmail || null,
                 name,
-                auth0LoginId,
+                auth0LoginId: userId,
                 picture, tier: 'pending',
                 createdAt: nowTimestamp()
-            }
+            };
 
             const created = await createUser({ user });
             if (created) {
@@ -198,34 +229,36 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            logger.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
+            logger.error(`❌ Failed to create user with id ${req.auth?.payload?.sub || 'unknown'}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
 
     app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
         try {
-            const { tier } = req.body;
+            const requestedTier = resolveTier(req.body?.tier);
             const userId = req.auth.payload.sub;
             const user = await getUserById({ userId });
             const fromTier = resolveTier(user?.tier || 'free');
 
-            if (!['free', 'starter', 'pro', 'admin'].includes(tier)) {
-                return res.status(400).json({ error: 'Invalid tier selected' });
-            }
-
-            await updateUserTier({ userId, tier });
-            invalidateAdminFallbackTierCache(userId);
-            if (fromTier !== tier) {
-                await recordTierUpgrade({
-                    userId,
-                    fromTier,
-                    toTier: tier,
-                    skuCode: `${tier}_manual`,
+            if (requestedTier !== 'free') {
+                return res.status(403).json({
+                    error: 'Direct paid tier changes are disabled. Use Stripe checkout.',
                 });
             }
 
-            res.json({ status: 'updated', tier });
+            await updateUserTier({ userId, tier: requestedTier });
+            invalidateAdminFallbackTierCache(userId);
+            if (fromTier !== requestedTier) {
+                await recordTierUpgrade({
+                    userId,
+                    fromTier,
+                    toTier: requestedTier,
+                    skuCode: `${requestedTier}_manual`,
+                });
+            }
+
+            res.json({ status: 'updated', tier: requestedTier });
         } catch (err) {
             logger.error('❌ Tier update failed:', err);
             res.status(500).json({ error: 'Server error' });

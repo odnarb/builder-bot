@@ -1,3 +1,5 @@
+import { createInMemoryRateLimiter } from '../middleware/in-memory-rate-limit.js';
+
 /**
  * Register AI generation routes.
  * @param {import('express').Express} app
@@ -5,21 +7,37 @@
  */
 export function registerAiRoutes(app, deps) {
     const {
+        jwtCheck,
         asyncHandler,
+        getUserById,
         resolveTier,
         resolveAiUsageKey,
         createAiGetStructureHandler,
     } = deps;
 
     const handleAiGetStructure = createAiGetStructureHandler(deps);
+    const aiRateLimiter = createInMemoryRateLimiter({
+        windowMs: Number(process.env.AI_ROUTE_RATE_LIMIT_WINDOW_MS || 60000),
+        maxRequests: Number(process.env.AI_ROUTE_RATE_LIMIT_MAX_REQUESTS || 30),
+        keyPrefix: 'ai-get-structure',
+    });
 
-    app.post('/ai-get-structure', asyncHandler(async (req, res) => {
+    app.post('/ai-get-structure', jwtCheck, aiRateLimiter, asyncHandler(async (req, res) => {
         const {
             message,
-            tier: rawTier,
             context = {},
             includeSchematic = false,
         } = req.body || {};
+        const authUserId = req.auth?.payload?.sub || null;
+        if (!authUserId) {
+            return res.status(401).json({
+                error: 'Unauthorized',
+                message: 'Missing or invalid access token.',
+            });
+        }
+
+        const user = await getUserById({ userId: authUserId });
+        const rawTier = resolveTier(user?.tier || 'free');
 
         const usageKey = resolveAiUsageKey(req, resolveTier(rawTier));
         const result = await handleAiGetStructure({
@@ -28,7 +46,7 @@ export function registerAiRoutes(app, deps) {
             context,
             includeSchematic,
             usageKey,
-            authUserId: req.auth?.payload?.sub || null,
+            authUserId,
         });
 
         if (result.headers && typeof result.headers === 'object') {

@@ -15,6 +15,16 @@ const COMMANDER_UUID = process.env.COMMANDER_UUID || "123-123-1234"
 const MC_HOST_IP = process.env.MC_HOST_IP || '127.0.0.1'
 const MC_HOST_PORT = process.env.MC_HOST_PORT || 25565
 const MC_HOST_VERSION = process.env.MC_HOST_VERSION || '1.20.4'
+const MC_AUTH_MODE = String(process.env.MC_AUTH_MODE || 'offline').trim().toLowerCase()
+const VALID_MC_AUTH_MODES = new Set(['offline', 'mojang', 'microsoft'])
+const RESOLVED_MC_AUTH_MODE = VALID_MC_AUTH_MODES.has(MC_AUTH_MODE) ? MC_AUTH_MODE : 'offline'
+
+if (MC_AUTH_MODE !== RESOLVED_MC_AUTH_MODE) {
+  console.warn(`⚠️ Unsupported MC_AUTH_MODE "${MC_AUTH_MODE}". Falling back to "${RESOLVED_MC_AUTH_MODE}".`)
+}
+if (RESOLVED_MC_AUTH_MODE !== 'offline') {
+  console.warn(`⚠️ MC_AUTH_MODE="${RESOLVED_MC_AUTH_MODE}" enables external auth flows. Keep dependencies updated and use trusted runtime environments.`)
+}
 
 //bot's name
 const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
@@ -61,7 +71,8 @@ const bot = mineflayer.createBot({
   username: BOT_NAME,
   host: MC_HOST_IP,
   port: MC_HOST_PORT,
-  version: MC_HOST_VERSION
+  version: MC_HOST_VERSION,
+  auth: RESOLVED_MC_AUTH_MODE,
 });
 
 bot.loadPlugin(pathfinder);

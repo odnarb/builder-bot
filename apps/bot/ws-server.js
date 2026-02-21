@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { timingSafeEqual } from 'crypto';
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
@@ -6,6 +7,64 @@ import { handlePlayerCommand, runBuildCommandSingleFlight } from './command-rout
 import { executeCommands } from './execute-commands.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { resolveCommanderUsername } from './player-identity.js';
+
+const DEFAULT_ALLOWED_WS_ORIGINS = Object.freeze([
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+  'http://127.0.0.1:4173',
+  'http://localhost:4173',
+]);
+
+function normalizeOrigin(origin) {
+  const rawOrigin = typeof origin === 'string' ? origin.trim() : '';
+  if (!rawOrigin) {
+    return null;
+  }
+
+  if (rawOrigin === 'null') {
+    return 'null';
+  }
+
+  try {
+    return new URL(rawOrigin).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function parseAllowedWsOrigins(rawAllowedOrigins) {
+  const source = typeof rawAllowedOrigins === 'string' && rawAllowedOrigins.trim().length > 0
+    ? rawAllowedOrigins
+    : DEFAULT_ALLOWED_WS_ORIGINS.join(',');
+
+  const parsed = source
+    .split(',')
+    .map((entry) => normalizeOrigin(entry))
+    .filter(Boolean);
+
+  return new Set(parsed);
+}
+
+export function isAllowedWsOrigin({ request, allowedOrigins }) {
+  const originAllowlist = allowedOrigins instanceof Set
+    ? allowedOrigins
+    : parseAllowedWsOrigins(
+      Array.isArray(allowedOrigins)
+        ? allowedOrigins.join(',')
+        : String(allowedOrigins || ''),
+    );
+
+  if (originAllowlist.size === 0) {
+    return true;
+  }
+
+  const requestOrigin = normalizeOrigin(request?.headers?.origin);
+  if (!requestOrigin) {
+    return false;
+  }
+
+  return originAllowlist.has(requestOrigin);
+}
 
 export function resolveWsBuildPrompt(message) {
   if (!message || typeof message !== 'object') {
@@ -37,11 +96,54 @@ export function resolveWsInstructionPlanPayload(message) {
   return message.plan || message.payload || null;
 }
 
+function safeTokenEquals(expectedToken, providedToken) {
+  const expected = Buffer.from(String(expectedToken || ''), 'utf8');
+  const provided = Buffer.from(String(providedToken || ''), 'utf8');
+  if (expected.length === 0 || provided.length === 0 || expected.length !== provided.length) {
+    return false;
+  }
+  return timingSafeEqual(expected, provided);
+}
+
+export function isAuthorizedWsClient({ request, expectedAuthToken }) {
+  const expectedToken = String(expectedAuthToken || '').trim();
+  if (!expectedToken) {
+    return false;
+  }
+
+  const requestUrl = new URL(String(request?.url || '/'), 'ws://localhost');
+  const providedToken = String(requestUrl.searchParams.get('authToken') || '').trim();
+  return safeTokenEquals(expectedToken, providedToken);
+}
+
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
-  const wss = new WebSocketServer({ port: 3002 });
+  const expectedWsAuthToken = String(process.env.AUTH_TOKEN || '').trim();
+  const rawAllowedWsOrigins = String(process.env.BOT_WS_ALLOWED_ORIGINS || '').trim();
+  if (process.env.NODE_ENV === 'production' && rawAllowedWsOrigins.length === 0) {
+    console.warn('⚠️ BOT_WS_ALLOWED_ORIGINS is not explicitly set in production; using default local origin allowlist.');
+  }
+  const allowedWsOrigins = parseAllowedWsOrigins(rawAllowedWsOrigins);
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 3002 });
 
-  wss.on('connection', ws => {
+  wss.on('connection', (ws, request) => {
+    if (!isAllowedWsOrigin({ request, allowedOrigins: allowedWsOrigins })) {
+      ws.send(JSON.stringify({
+        type: 'ws_auth_error',
+        reason: 'origin_not_allowed',
+      }));
+      ws.close(1008, 'Origin not allowed');
+      return;
+    }
+
+    if (!isAuthorizedWsClient({ request, expectedAuthToken: expectedWsAuthToken })) {
+      ws.send(JSON.stringify({
+        type: 'ws_auth_error',
+        reason: 'unauthorized',
+      }));
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
     console.log('📡 Client connected');
 
     ws.on('message', async rawData => {
@@ -206,7 +308,7 @@ export function startBotServer({ bot, commander }) {
     });
   });
 
-  console.log('🛰️ Bot WebSocket server running on ws://localhost:3002');
+  console.log('🛰️ Bot WebSocket server running on ws://127.0.0.1:3002');
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {

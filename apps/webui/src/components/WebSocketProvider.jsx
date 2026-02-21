@@ -1,4 +1,5 @@
 import React, { createContext, useEffect, useRef, useState } from 'react';
+import { useAuth0 } from '@auth0/auth0-react';
 
 const RETRY_LIMIT = 100;
 
@@ -8,14 +9,31 @@ export const WebSocketContext = createContext({
 });
 
 export default function WebSocketProvider({ children }) {
+  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
   const reconnectAttempts = useRef(0);
   const shouldReconnect = useRef(true);
   const [messages, setMessages] = useState([]);
 
-  const connectWebSocket = () => {
-    const socket = new WebSocket('ws://localhost:3002');
+  const connectWebSocket = async () => {
+    let accessToken = '';
+    try {
+      accessToken = await getAccessTokenSilently();
+    } catch (error) {
+      console.error('❌ Could not fetch access token for WebSocket auth:', error);
+      if (shouldReconnect.current && reconnectAttempts.current < RETRY_LIMIT) {
+        reconnectAttempts.current++;
+        const delay = 1000 * reconnectAttempts.current;
+        setTimeout(() => {
+          void connectWebSocket();
+        }, delay);
+      }
+      return;
+    }
+
+    const socketUrl = `ws://127.0.0.1:3002?authToken=${encodeURIComponent(accessToken)}`;
+    const socket = new WebSocket(socketUrl);
     socketRef.current = socket;
 
     socket.onopen = () => {
@@ -51,7 +69,9 @@ export default function WebSocketProvider({ children }) {
         reconnectAttempts.current++;
         const delay = 1000 * reconnectAttempts.current;
         console.log(`🔁 Reconnecting in ${delay / 1000}s...`);
-        setTimeout(connectWebSocket, delay);
+        setTimeout(() => {
+          void connectWebSocket();
+        }, delay);
       } else if (reconnectAttempts.current >= RETRY_LIMIT) {
         console.error('❌ Max reconnection attempts reached.');
         alert('Connection to BuilderBot lost. Please reload the page.');
@@ -60,8 +80,12 @@ export default function WebSocketProvider({ children }) {
   };
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return undefined;
+    }
+
     shouldReconnect.current = true;
-    connectWebSocket();
+    void connectWebSocket();
 
     return () => {
       shouldReconnect.current = false;
@@ -70,7 +94,7 @@ export default function WebSocketProvider({ children }) {
         socketRef.current = null;
       }
     };
-  }, []);
+  }, [isAuthenticated, getAccessTokenSilently]);
 
   const sendMessage = (data) => {
     if (
