@@ -4,6 +4,7 @@ const PERSISTENCE_COLLECTIONS = Object.freeze({
     buildEconomics: 'pre_scale_build_economics',
     telemetryMonthly: 'pre_scale_telemetry_monthly',
     conversionEvents: 'pre_scale_conversion_events',
+    emergencyGuard: 'pre_scale_emergency_guard',
 });
 
 const runtime = {

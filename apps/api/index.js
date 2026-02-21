@@ -99,6 +99,13 @@ import {
     setQueueDepth,
 } from './utils/ops-metrics.js';
 import {
+    evaluateEmergencyMarginGuard,
+    getEmergencyMarginGuardState,
+    setEmergencyMarginGuardManualOverride,
+    shouldForceThinSnapshots,
+    shouldThrottleFreeTier,
+} from './utils/emergency-margin-guard.js';
+import {
     acceptPolicyDocuments,
     createMarketplaceListing,
     createSubscriptionTicket,
@@ -310,6 +317,24 @@ const INFRA_COST_PER_REQUEST_USD = Object.freeze({
     pro: 0.00024,
     admin: 0.0002,
 });
+const EMERGENCY_GUARD_EVAL_CACHE_TTL_MS = Math.max(
+    5000,
+    Number(process.env.EMERGENCY_GUARD_CACHE_TTL_MS || 45000),
+);
+const EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE = 'DISABLE_GUARD_TEMPORARILY';
+const ADMIN_SCOPE_TOKENS = Object.freeze(['admin', 'admin:all', 'read:admin', 'write:admin', 'ops:admin']);
+const ADMIN_ROLE_CLAIM_KEYS = Object.freeze(
+    [
+        process.env.AUTH0_ADMIN_ROLE_CLAIM,
+        'https://minecraft-ai-agent/roles',
+        'roles',
+    ].filter(Boolean),
+);
+const emergencyGuardEvaluationRuntime = {
+    lastEvaluatedAtMs: 0,
+    lastResult: null,
+    inFlightPromise: null,
+};
 
 /**
  * Basic moderation filter for user prompts.
@@ -324,6 +349,185 @@ function detectModerationViolation(prompt) {
         }
     }
     return null;
+}
+
+/**
+ * Clone JSON-safe values.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Return whether JWT claims indicate admin access.
+ * @param {Record<string, any> | undefined} payload
+ * @returns {boolean}
+ */
+function hasAdminClaims(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return false;
+    }
+
+    for (const claimKey of ADMIN_ROLE_CLAIM_KEYS) {
+        const claimValue = payload[claimKey];
+        if (Array.isArray(claimValue) && claimValue.some((entry) => String(entry || '').toLowerCase() === 'admin')) {
+            return true;
+        }
+    }
+
+    if (Array.isArray(payload.permissions)) {
+        const permissions = payload.permissions.map((entry) => String(entry || '').toLowerCase());
+        if (permissions.some((entry) => ADMIN_SCOPE_TOKENS.includes(entry))) {
+            return true;
+        }
+    }
+
+    if (typeof payload.scope === 'string') {
+        const scopes = payload.scope
+            .split(/\s+/)
+            .map((entry) => entry.trim().toLowerCase())
+            .filter((entry) => entry.length > 0);
+        if (scopes.some((entry) => ADMIN_SCOPE_TOKENS.includes(entry))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Require admin access for /admin routes.
+ */
+const requireAdminAccess = asyncHandler(async (req, res, next) => {
+    const authPayload = req.auth?.payload;
+    const userId = authPayload?.sub;
+    if (!userId) {
+        return res.status(401).json({ error: 'Authentication is required for admin access.' });
+    }
+
+    if (hasAdminClaims(authPayload)) {
+        return next();
+    }
+
+    const user = await getUserById({ userId });
+    if (resolveTier(user?.tier || 'free') !== 'admin') {
+        return res.status(403).json({ error: 'Admin access is required.' });
+    }
+
+    return next();
+});
+
+/**
+ * Resolve numeric alert value for emergency-guard alerts.
+ * @param {Awaited<ReturnType<typeof getEmergencyMarginGuardState>>} state
+ * @returns {number}
+ */
+function getEmergencyGuardAlertValue(state) {
+    const marginPercent = Number(state?.triggerMetrics?.marginPercent);
+    if (Number.isFinite(marginPercent)) {
+        return marginPercent;
+    }
+    return Number(state?.triggerMetrics?.tokenBurnLastHourUsd) || 0;
+}
+
+/**
+ * Evaluate the global emergency margin guard using current economics + burn metrics.
+ * @param {{ force?: boolean, now?: Date }} [params]
+ * @returns {Promise<{
+ *   month: string | null,
+ *   marginPercent: number | null,
+ *   tokenBurnLastHourUsd: number,
+ *   state: Awaited<ReturnType<typeof getEmergencyMarginGuardState>>,
+ *   transition: { activated: boolean, deactivated: boolean, at: string, reasonCodes: string[] } | null,
+ * }>}
+ */
+async function evaluateCurrentEmergencyMarginGuard({ force = false, now = new Date() } = {}) {
+    const nowDate = new Date(now);
+    const nowMs = nowDate.getTime();
+    if (
+        !force &&
+        emergencyGuardEvaluationRuntime.lastResult &&
+        (nowMs - emergencyGuardEvaluationRuntime.lastEvaluatedAtMs) < EMERGENCY_GUARD_EVAL_CACHE_TTL_MS
+    ) {
+        return cloneJson(emergencyGuardEvaluationRuntime.lastResult);
+    }
+
+    if (!force && emergencyGuardEvaluationRuntime.inFlightPromise) {
+        return emergencyGuardEvaluationRuntime.inFlightPromise;
+    }
+
+    const evaluationPromise = (async () => {
+        try {
+            const [marginReport, opsSnapshot] = await Promise.all([
+                getMonthlyMarginReport({ now: nowDate }),
+                Promise.resolve(getOpsDashboardSnapshot()),
+            ]);
+            const marginPercent = typeof marginReport?.totals?.marginPercent === 'number'
+                ? marginReport.totals.marginPercent
+                : null;
+            const tokenBurnLastHourUsd = Number(opsSnapshot?.tokenBurnLastHourUsd) || 0;
+            const evaluation = await evaluateEmergencyMarginGuard({
+                marginPercent,
+                tokenBurnLastHourUsd,
+                force,
+                now: nowDate,
+            });
+
+            if (evaluation.transition?.activated) {
+                logger.warn('Emergency margin guard activated.', {
+                    month: marginReport.month,
+                    reasonCodes: evaluation.transition.reasonCodes,
+                    marginPercent,
+                    tokenBurnLastHourUsd,
+                });
+            } else if (evaluation.transition?.deactivated) {
+                logger.info('Emergency margin guard deactivated.', {
+                    month: marginReport.month,
+                    marginPercent,
+                    tokenBurnLastHourUsd,
+                });
+            }
+
+            const result = {
+                month: marginReport.month || null,
+                marginPercent,
+                tokenBurnLastHourUsd,
+                state: evaluation.state,
+                transition: evaluation.transition,
+            };
+
+            emergencyGuardEvaluationRuntime.lastResult = cloneJson(result);
+            emergencyGuardEvaluationRuntime.lastEvaluatedAtMs = Date.now();
+            return cloneJson(result);
+        } catch (error) {
+            logger.error(`Failed to evaluate emergency margin guard. ${error?.message || error}`, {
+                force,
+            });
+            const fallbackResult = {
+                month: null,
+                marginPercent: null,
+                tokenBurnLastHourUsd: Number(getOpsDashboardSnapshot().tokenBurnLastHourUsd) || 0,
+                state: await getEmergencyMarginGuardState(),
+                transition: null,
+            };
+            emergencyGuardEvaluationRuntime.lastResult = cloneJson(fallbackResult);
+            emergencyGuardEvaluationRuntime.lastEvaluatedAtMs = Date.now();
+            return cloneJson(fallbackResult);
+        }
+    })().finally(() => {
+        if (emergencyGuardEvaluationRuntime.inFlightPromise === evaluationPromise) {
+            emergencyGuardEvaluationRuntime.inFlightPromise = null;
+        }
+    });
+
+    if (!force) {
+        emergencyGuardEvaluationRuntime.inFlightPromise = evaluationPromise;
+    }
+
+    return evaluationPromise;
 }
 
 //rewrite urls from /api to /
@@ -1309,6 +1513,38 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
         metadata: { tier },
     });
     const contextPreparationStartedAtMs = Date.now();
+    const emergencyGuardEvaluation = await evaluateCurrentEmergencyMarginGuard();
+    const emergencyGuardState = emergencyGuardEvaluation.state;
+
+    if (shouldThrottleFreeTier({ tier, guardState: emergencyGuardState })) {
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: true,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
+        });
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'api',
+            signal: 'emergency_guard_free_tier_throttle',
+            severity: 'medium',
+            metadata: {
+                tier,
+                reasonCodes: emergencyGuardState.reasonCodes,
+            },
+        });
+        return res.status(429).json({
+            error: 'Free tier is temporarily throttled due to emergency capacity protection. Upgrade to Starter, Pro, or Admin for continued access.',
+            upgradeSuggested: true,
+            emergencyGuard: {
+                active: emergencyGuardState.active,
+                reason: emergencyGuardState.reason,
+                reasonCodes: emergencyGuardState.reasonCodes,
+            },
+        });
+    }
 
     if (!tierFeaturePolicy.allowBuilds) {
         await recordPreScaleRequestFailure({
@@ -1393,6 +1629,7 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     } = prepareContextForSnapshot({
         usageKey,
         context,
+        forceThinSnapshot: shouldForceThinSnapshots({ guardState: emergencyGuardState }),
     });
     const contextSnapshot = buildContextSnapshot({
         context: contextForSnapshot,
@@ -1838,6 +2075,15 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 },
                 marginAlertsTriggered: marginAlerts.triggered.length,
                 contextDiagnostics,
+                emergencyGuard: {
+                    active: emergencyGuardState.active,
+                    reason: emergencyGuardState.reason,
+                    reasonCodes: emergencyGuardState.reasonCodes,
+                    source: emergencyGuardState.source,
+                    throttleFreeTier: emergencyGuardState.throttleFreeTier,
+                    forceThinSnapshots: emergencyGuardState.forceThinSnapshots,
+                    lastEvaluatedAt: emergencyGuardState.lastEvaluatedAt,
+                },
             },
         });
     } catch (err) {
@@ -1881,6 +2127,11 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
         return res.status(500).json({ error: 'Failed to generate structure. Please try again.' });
     }
 }));
+
+/**
+ * Lock all admin routes with JWT auth + admin authorization.
+ */
+app.use('/admin', jwtCheck, requireAdminAccess);
 
 /**
  * Return per-tier usage metering rows for a month.
@@ -1983,12 +2234,14 @@ app.post('/admin/pre-scale/simulate', asyncHandler(async (req, res) => {
         requestsPerUser,
         tiers,
     } = req.body || {};
+    const emergencyGuard = await evaluateCurrentEmergencyMarginGuard();
 
     return res.json(runPreScaleSimulation({
         seed,
         concurrentUsers,
         requestsPerUser,
         tiers,
+        guardState: emergencyGuard.state,
     }));
 }));
 
@@ -2029,14 +2282,89 @@ app.get('/admin/ops-dashboard', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Return current emergency margin guard state.
+ */
+app.get('/admin/emergency-guard', asyncHandler(async (req, res) => {
+    const evaluation = await evaluateCurrentEmergencyMarginGuard({ force: true });
+    return res.json(evaluation);
+}));
+
+/**
+ * Set, clear, or time-box emergency margin guard manual override.
+ */
+app.post('/admin/emergency-guard/override', asyncHandler(async (req, res) => {
+    const {
+        mode,
+        reason,
+        actor,
+        durationMinutes,
+        confirmationCode,
+    } = req.body || {};
+    const adminUserId = req.auth?.payload?.sub || null;
+    const resolvedActor = typeof actor === 'string' && actor.trim().length > 0
+        ? actor.trim()
+        : adminUserId;
+
+    if (mode === 'force_off' && confirmationCode !== EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE) {
+        return res.status(400).json({
+            error: `force_off requires explicit confirmationCode="${EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE}".`,
+        });
+    }
+
+    try {
+        const nextState = await setEmergencyMarginGuardManualOverride({
+            mode,
+            reason,
+            actor: resolvedActor,
+            durationMinutes,
+        });
+        recordSecurityAuditEvent({
+            type: 'emergency_guard_override',
+            severity: mode === 'force_off' ? 'warning' : 'info',
+            userKey: adminUserId || 'admin:unknown',
+            tier: 'admin',
+            message: `Emergency guard override ${String(mode || 'unknown')} by ${resolvedActor || 'unknown-admin'}.`,
+            context: {
+                mode,
+                reason: typeof reason === 'string' ? reason : null,
+                durationMinutes: Number.isFinite(Number(durationMinutes)) ? Number(durationMinutes) : null,
+                expiresAt: nextState.manualOverride?.expiresAt || null,
+                confirmationCodeAccepted: mode === 'force_off',
+            },
+        });
+    } catch (error) {
+        return res.status(400).json({
+            error: error.message || 'Invalid emergency guard override request.',
+        });
+    }
+
+    const evaluation = await evaluateCurrentEmergencyMarginGuard({ force: true });
+    return res.json(evaluation);
+}));
+
+/**
  * Return operations alerts derived from request/failure metrics.
  */
 app.get('/admin/ops-alerts', asyncHandler(async (req, res) => {
     const evaluation = evaluateOpsAlerts();
-    const incidents = evaluateIncidentNotifications({ alerts: evaluation.alerts });
+    const emergencyGuard = await evaluateCurrentEmergencyMarginGuard();
+    const alerts = [...evaluation.alerts];
+
+    if (emergencyGuard.state.active) {
+        alerts.push({
+            level: 'error',
+            code: 'emergency_margin_guard_active',
+            message: emergencyGuard.state.reason || 'Emergency margin guard is active.',
+            value: getEmergencyGuardAlertValue(emergencyGuard.state),
+        });
+    }
+
+    const incidents = evaluateIncidentNotifications({ alerts });
     return res.json({
         ...evaluation,
+        alerts,
         incidents,
+        emergencyGuard,
     });
 }));
 

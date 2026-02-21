@@ -1,4 +1,5 @@
 import { getTierAiPolicy, resolveTier } from '../config/tier-policy.js';
+import { shouldForceThinSnapshots, shouldThrottleFreeTier } from './emergency-margin-guard.js';
 
 const recentSimulationRuns = [];
 
@@ -90,6 +91,7 @@ function buildScenarios({ concurrentUsers, requestsPerUser }) {
  *   tier: 'free' | 'starter' | 'pro' | 'admin',
  *   scenario: { abuseMultiplier: number, failureBias: number, retryBias: number },
  *   rng: () => number,
+ *   guardState?: Record<string, any> | null,
  * }} params
  * @returns {{
  *   latencyMs: number,
@@ -97,9 +99,26 @@ function buildScenarios({ concurrentUsers, requestsPerUser }) {
  *   failed: boolean,
  *   queueRejected: boolean,
  *   tokenBurnUsd: number,
+ *   freeTierThrottled: boolean,
+ *   forcedThinSnapshot: boolean,
  * }}
  */
-function simulateRequest({ tier, scenario, rng }) {
+function simulateRequest({ tier, scenario, rng, guardState = null }) {
+    const freeTierThrottled = shouldThrottleFreeTier({ tier, guardState });
+    const forcedThinSnapshot = shouldForceThinSnapshots({ guardState });
+
+    if (freeTierThrottled) {
+        return {
+            latencyMs: 45 + Math.floor(rng() * 40),
+            retries: 0,
+            failed: false,
+            queueRejected: true,
+            tokenBurnUsd: 0,
+            freeTierThrottled: true,
+            forcedThinSnapshot,
+        };
+    }
+
     const tierPolicy = getTierAiPolicy(tier);
     const normalizedConcurrency = clamp(tierPolicy.maxConcurrentRequests / 8, 0.125, 1);
 
@@ -130,7 +149,8 @@ function simulateRequest({ tier, scenario, rng }) {
         pro: 7600,
         admin: 11000,
     };
-    const requestTokens = tokenLoadByTier[tier] * scenario.abuseMultiplier * (1 + retries * 0.25);
+    const thinSnapshotSavingsMultiplier = forcedThinSnapshot ? 0.72 : 1;
+    const requestTokens = tokenLoadByTier[tier] * scenario.abuseMultiplier * (1 + retries * 0.25) * thinSnapshotSavingsMultiplier;
     const tokenBurnUsd = ((requestTokens * 0.30) + (requestTokens * 0.55)) / 1_000_000;
 
     return {
@@ -139,6 +159,8 @@ function simulateRequest({ tier, scenario, rng }) {
         failed,
         queueRejected,
         tokenBurnUsd,
+        freeTierThrottled: false,
+        forcedThinSnapshot,
     };
 }
 
@@ -165,6 +187,7 @@ function percentile(samples, pct) {
  *   concurrentUsers?: number,
  *   requestsPerUser?: number,
  *   tiers?: string[],
+ *   guardState?: Record<string, any> | null,
  * }} [params]
  * @returns {{
  *   generatedAt: string,
@@ -177,6 +200,9 @@ function percentile(samples, pct) {
  *     queueRejections: number,
  *     queueRejectionRatePercent: number,
  *     tokenBurnUsd: number,
+ *     freeTierThrottles: number,
+ *     forcedThinSnapshots: number,
+ *     guardActive: boolean,
  *     latencyP50Ms: number,
  *     latencyP95Ms: number,
  *     latencyP99Ms: number,
@@ -193,6 +219,9 @@ export function runPreScaleSimulation(params = {}) {
     const tiers = Array.isArray(params.tiers) && params.tiers.length > 0
         ? params.tiers.map((tier) => resolveTier(tier))
         : ['free', 'starter', 'pro', 'admin'];
+    const guardState = params.guardState && typeof params.guardState === 'object'
+        ? params.guardState
+        : null;
 
     const scenarios = buildScenarios({ concurrentUsers, requestsPerUser });
     const allLatencies = [];
@@ -202,6 +231,8 @@ export function runPreScaleSimulation(params = {}) {
     let totalRetries = 0;
     let totalQueueRejections = 0;
     let totalTokenBurnUsd = 0;
+    let totalFreeTierThrottles = 0;
+    let totalForcedThinSnapshots = 0;
     let peakQueueDepth = 0;
 
     const scenarioRows = [];
@@ -212,6 +243,8 @@ export function runPreScaleSimulation(params = {}) {
         let scenarioRetries = 0;
         let scenarioQueueRejections = 0;
         let scenarioTokenBurnUsd = 0;
+        let scenarioFreeTierThrottles = 0;
+        let scenarioForcedThinSnapshots = 0;
         const scenarioLatencies = [];
 
         for (let userIndex = 0; userIndex < scenario.users; userIndex += 1) {
@@ -220,13 +253,15 @@ export function runPreScaleSimulation(params = {}) {
 
             for (let requestIndex = 0; requestIndex < scenario.requestsPerUser; requestIndex += 1) {
                 const tier = tiers[(userIndex + requestIndex) % tiers.length];
-                const result = simulateRequest({ tier, scenario, rng });
+                const result = simulateRequest({ tier, scenario, rng, guardState });
 
                 scenarioRequests += 1;
                 scenarioFailures += result.failed ? 1 : 0;
                 scenarioRetries += result.retries;
                 scenarioQueueRejections += result.queueRejected ? 1 : 0;
                 scenarioTokenBurnUsd += result.tokenBurnUsd;
+                scenarioFreeTierThrottles += result.freeTierThrottled ? 1 : 0;
+                scenarioForcedThinSnapshots += result.forcedThinSnapshot ? 1 : 0;
                 scenarioLatencies.push(result.latencyMs);
                 allLatencies.push(result.latencyMs);
             }
@@ -237,6 +272,8 @@ export function runPreScaleSimulation(params = {}) {
         totalRetries += scenarioRetries;
         totalQueueRejections += scenarioQueueRejections;
         totalTokenBurnUsd += scenarioTokenBurnUsd;
+        totalFreeTierThrottles += scenarioFreeTierThrottles;
+        totalForcedThinSnapshots += scenarioForcedThinSnapshots;
 
         scenarioRows.push({
             name: scenario.name,
@@ -253,6 +290,8 @@ export function runPreScaleSimulation(params = {}) {
                 ? Number(((scenarioQueueRejections / scenarioRequests) * 100).toFixed(2))
                 : 0,
             tokenBurnUsd: Number(scenarioTokenBurnUsd.toFixed(4)),
+            freeTierThrottles: scenarioFreeTierThrottles,
+            forcedThinSnapshots: scenarioForcedThinSnapshots,
             latencyP95Ms: percentile(scenarioLatencies, 95),
         });
     }
@@ -272,6 +311,9 @@ export function runPreScaleSimulation(params = {}) {
                 ? Number(((totalQueueRejections / totalRequests) * 100).toFixed(2))
                 : 0,
             tokenBurnUsd: Number(totalTokenBurnUsd.toFixed(4)),
+            freeTierThrottles: totalFreeTierThrottles,
+            forcedThinSnapshots: totalForcedThinSnapshots,
+            guardActive: Boolean(guardState?.active),
             latencyP50Ms: percentile(allLatencies, 50),
             latencyP95Ms: percentile(allLatencies, 95),
             latencyP99Ms: percentile(allLatencies, 99),

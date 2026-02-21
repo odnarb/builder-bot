@@ -149,6 +149,21 @@ test('prepareContextForSnapshot promotes to thick mode on build-critical trigger
   assert.equal(result.diagnostics.triggerReason, 'build_critical');
 });
 
+test('prepareContextForSnapshot honors forceThinSnapshot override', () => {
+  resetAiContextState();
+  const result = prepareContextForSnapshot({
+    usageKey: 'auth:user-guard',
+    context: {
+      taskState: { buildCritical: true, pathfindingFailure: true },
+      snapshotMode: 'thick',
+    },
+    forceThinSnapshot: true,
+  });
+
+  assert.equal(result.diagnostics.snapshotMode, 'thin');
+  assert.equal(result.diagnostics.triggerReason, null);
+});
+
 test('buildContextSnapshot uses delta-only mode for thin snapshots with memo + delta', () => {
   resetAiContextState();
   const usageKey = 'auth:user-c';

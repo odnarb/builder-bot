@@ -130,6 +130,7 @@ Is this clear?
 ## Phase 4: Ops, Reliability, and Safety (P1)
 - [x] Build operations dashboard: active sessions, installs, queue health, failures. (`apps/api/utils/ops-metrics.js`, `GET /admin/ops-dashboard`)
 - [x] Add automated alerts for crashes, blocked placements, suspicious usage, and burn spikes. (`evaluateOpsAlerts`, `GET /admin/ops-alerts`)
+- [x] Add global emergency margin guard (`margin drop` OR `burn spike`) that auto-throttles Free tier, forces thin snapshots, and exposes admin override controls. (`apps/api/utils/emergency-margin-guard.js`, `GET /admin/emergency-guard`, `POST /admin/emergency-guard/override`)
 - [x] Add admin incident notifications and response playbooks. (`apps/api/utils/incident-manager.js`, `GET /admin/incidents`)
 - [x] Implement multi-pool inference routing (standard vs priority pool by tier). (`inferencePool` in tier model route)
 - [x] Add canary rollout for prompt/model changes. (`isInCanaryRollout` usage-key enrollment)
@@ -191,5 +192,7 @@ Is this clear?
 - `2026-02-20 Implementation Pass 5`: enforced refund eligibility + renewal preference policy logic and wired Terms/Privacy acceptance into signup/checkout confirmation (`apps/api/utils/billing-policy.js`, `/user/subscription/*`, `/stripe/confirm-checkout`).
 - `2026-02-20 Implementation Pass 5`: added like/upvote reward credits with anti-fraud baseline checks (`recordBuildReaction`, `/community/rewards`).
 - `2026-02-20 Pre-Scale Pass`: monthly usage/margin telemetry now supports Firestore persistence with restart-safe monthly keys (`apps/api/utils/economics-persistence.js`, `apps/api/utils/token-governor.js`, `apps/api/utils/margin-metering.js`).
+- `2026-02-21 Ops Guard Pass`: added global emergency margin guard evaluation wired into `/ai-get-structure` and `/admin/ops-alerts`, including free-tier auto-throttle, forced thin snapshots, and admin override endpoint.
+- `2026-02-21 Ops Guard Hardening`: locked `/admin/*` behind JWT + admin authorization, added per-process guard evaluation cache/in-flight lock, added hysteresis recovery logic, and updated simulation harness to enforce guard throttle + forced-thin behavior.
 - Caveat: persistent economics writes require a working Firestore runtime (`GOOGLE_APPLICATION_CREDENTIALS` or equivalent cloud identity). Without it, the system falls back to in-memory mode.
 - Caveat: localization content is still pending translation copy and full UI string coverage; only locale config and roadmap scaffolding exist today.

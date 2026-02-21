@@ -1,14 +1,14 @@
 # Pre-Scale Stabilization Phase
 ## Minecraft AI Agent – Execution Order Plan
 
-Last updated: **2026-02-20**
+Last updated: **2026-02-21**
 Execution status: **Implementation pass completed in-code where feasible in this repository**
 
 Purpose: Stabilize economics, reliability, and operational visibility before aggressive marketing or scale push.
 
 ---
 
-## Status Summary (2026-02-20)
+## Status Summary (2026-02-21)
 - [x] Phase 1: Persistent Economics & Usage Integrity (P0)
 - [x] Phase 2: Real-World Telemetry & Visibility (P0)
 - [x] Phase 3: Stress & Abuse Hardening (P0)
@@ -81,6 +81,26 @@ Metrics returned by `POST /admin/pre-scale/simulate` and history at `GET /admin/
 - [x] Failure rates
 
 Goal: Break the system before users do.
+
+### 3.1 Global Emergency Margin Guard
+Implemented via `apps/api/utils/emergency-margin-guard.js` and integrated in `apps/api/index.js`.
+
+- [x] Emergency margin guard (auto throttle + force-thin + admin override + alert + playbook)
+- [x] Auto-evaluate guard on live economics (`monthly_margin < threshold` OR `token_burn_rate > threshold`)
+- [x] Conservative default thresholds enabled for initial traffic (`margin=45%`, `burn=$3/hr`, `cooldown=20m`, cached eval `45s`)
+- [x] Periodic persistence re-sync for multi-instance convergence (per-process in-memory cache + persistence refresh window)
+- [x] Auto-throttle Free tier request path during active guard state
+- [x] Force thin snapshots while guard is active (temporarily disables thick snapshots)
+- [x] Persist guard state/overrides to pre-scale persistence layer (`emergencyGuard` collection key)
+- [x] Add admin visibility + control endpoints:
+  - `GET /admin/emergency-guard`
+  - `POST /admin/emergency-guard/override` (`force_on` / `force_off` / `clear`)
+- [x] Lock `/admin/emergency-guard`, `/admin/emergency-guard/override`, and `/admin/ops-alerts` behind JWT + admin authorization middleware
+- [x] Surface active guard alert in `GET /admin/ops-alerts` (`emergency_margin_guard_active`)
+- [x] Attach incident playbook for guard activation (`emergency_margin_guard_active` in `apps/api/utils/incident-manager.js`)
+- [x] Guard enforcement coverage verified across primary request path retries and admin simulation path (no separate queue worker path present in-repo)
+
+Goal: Provide a fail-safe margin breaker that protects economics during abnormal burn or margin collapse.
 
 ---
 
@@ -183,6 +203,7 @@ Pre-scale stabilization is complete when:
 - [x] Economics persist across restarts
 - [x] Live telemetry validates margin assumptions
 - [x] System survives synthetic abuse testing
+- [x] Global emergency margin guard can auto-throttle and force thin context mode
 - [x] Latency is measurable with target profiles (P50/P95/P99 + cold-start/throughput)
 - [x] Conversion funnel is measurable
 - [x] Monthly SKU baseline (Starter/Pro/Admin) is clearly defined

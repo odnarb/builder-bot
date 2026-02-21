@@ -46,6 +46,15 @@ const PLAYBOOKS = Object.freeze({
             'Tighten caps temporarily and alert finance ops.',
         ],
     }),
+    emergency_margin_guard_active: Object.freeze({
+        title: 'Emergency Margin Guard Active',
+        priority: 'p1',
+        steps: [
+            'Review margin report and token burn metrics to confirm trigger conditions.',
+            'Keep Free-tier throttle and thin-snapshot mode active until metrics recover.',
+            'Use manual override only with incident owner approval and active monitoring.',
+        ],
+    }),
 });
 
 /**

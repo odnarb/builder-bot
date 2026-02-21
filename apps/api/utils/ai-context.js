@@ -272,9 +272,18 @@ export function shouldUseThickSnapshot(context = {}) {
 /**
  * Build normalized trigger hints for context snapshot generation.
  * @param {Record<string, any>} context
+ * @param {{ forceThinSnapshot?: boolean }} [options]
  * @returns {Record<string, any>}
  */
-export function withSnapshotHints(context = {}) {
+export function withSnapshotHints(context = {}, options = {}) {
+    if (options.forceThinSnapshot === true) {
+        return {
+            ...context,
+            snapshotMode: 'thin',
+            triggerReason: null,
+        };
+    }
+
     const triggerReason = resolveThickSnapshotTrigger(context);
     return {
         ...context,
@@ -467,6 +476,7 @@ function getOrCreateContextState(usageKey) {
  *   context?: Record<string, any>,
  *   now?: Date,
  *   refreshIntervalMs?: number,
+ *   forceThinSnapshot?: boolean,
  * }} params
  * @returns {{
  *   contextForSnapshot: Record<string, unknown>,
@@ -485,6 +495,7 @@ export function prepareContextForSnapshot({
     context = {},
     now = new Date(),
     refreshIntervalMs = DEFAULT_WORLD_MEMO_REFRESH_MS,
+    forceThinSnapshot = false,
 }) {
     const safeUsageKey = typeof usageKey === 'string' && usageKey.trim().length > 0
         ? usageKey.trim()
@@ -492,7 +503,9 @@ export function prepareContextForSnapshot({
     const nowDate = new Date(now);
     const nowMs = nowDate.getTime();
     const state = getOrCreateContextState(safeUsageKey);
-    const hintedContext = withSnapshotHints(context);
+    const hintedContext = withSnapshotHints(context, {
+        forceThinSnapshot,
+    });
     const comparableContext = toComparableDeltaContext(hintedContext);
     const safeRefreshIntervalMs = clamp(
         Number(refreshIntervalMs) || DEFAULT_WORLD_MEMO_REFRESH_MS,
