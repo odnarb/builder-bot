@@ -99,8 +99,13 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
     }
   } //end comands set
 
-  bot.chat(`📐 Build complete!`);
-  console.log(`📐 Build complete!`);
+  if (buildSuccess) {
+    bot.chat(`📐 Build complete!`);
+    console.log(`📐 Build complete!`);
+  } else {
+    bot.chat(`⚠️ Build finished with some errors. Check logs for details.`);
+    console.warn(`⚠️ Build finished with one or more command failures.`);
+  }
 
   //update build success
   const build = {
@@ -119,6 +124,11 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
       () => uploadBuildLogs({ buildId, logs: stepsLog })
     )
   }
+
+  return {
+    success: buildSuccess,
+    logs: stepsLog,
+  };
 }
 
 /**
@@ -147,7 +157,7 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
       if (skipIfAlreadyCorrect) {
         console.log(`⏭️ ${blockName} already at ${pos}`);
         stepsLog?.push({ type: 'block_already_exists', block: blockName, pos });
-        return false;
+        return true;
       }
     } else if (existing.name !== 'air' && allowOverwrite) {
       try {

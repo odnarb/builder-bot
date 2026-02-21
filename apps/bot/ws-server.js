@@ -2,9 +2,40 @@ import { WebSocketServer } from 'ws';
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
-import { handlePlayerCommand } from './command-router.js';
+import { handlePlayerCommand, runBuildCommandSingleFlight } from './command-router.js';
 import { executeCommands } from './execute-commands.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
+import { resolveCommanderUsername } from './player-identity.js';
+
+export function resolveWsBuildPrompt(message) {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+
+  if (message.type === 'chat_command') {
+    if (typeof message.message !== 'string' || message.message.trim().length === 0) {
+      return null;
+    }
+    return message.message.trim();
+  }
+
+  if (message.type === 'raw_prompt') {
+    if (typeof message.prompt !== 'string' || message.prompt.trim().length === 0) {
+      return null;
+    }
+    return `build ${message.prompt.trim()}`;
+  }
+
+  return null;
+}
+
+export function resolveWsInstructionPlanPayload(message) {
+  if (!message || typeof message !== 'object' || message.type !== 'instruction_plan') {
+    return null;
+  }
+
+  return message.plan || message.payload || null;
+}
 
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
@@ -96,19 +127,70 @@ export function startBotServer({ bot, commander }) {
           return;
         }
 
-        if (message.type === 'chat_command') {
-          await handlePlayerCommand({ commander, bot, message: message.message, username: 'Commander' }); // or "WebUI"
+        const commandMessage = resolveWsBuildPrompt(message);
+        if (commandMessage) {
+          const username = resolveCommanderUsername({
+            bot,
+            commander,
+            preferredUsername: message.username,
+          });
+
+          if (!username) {
+            ws.send(JSON.stringify({
+              type: 'command_rejected',
+              reason: 'commander_offline',
+              text: 'Commander player is not currently online.',
+            }));
+            return;
+          }
+
+          await handlePlayerCommand({
+            commander,
+            bot,
+            message: commandMessage,
+            username,
+          });
           return;
         }
 
-        if (message.type === 'instruction_plan') {
-          const normalizedPlan = normalizeInstructionPlan(message.plan || message.payload || {});
-          const { blocks } = toLegacyBlocksAndTags(normalizedPlan);
-          await executeCommands({
+        const instructionPlanPayload = resolveWsInstructionPlanPayload(message);
+        if (instructionPlanPayload) {
+          const username = resolveCommanderUsername({
             bot,
-            commands: blocks,
-            username: 'Commander',
+            commander,
+            preferredUsername: message.username,
           });
+
+          if (!username) {
+            ws.send(JSON.stringify({
+              type: 'instruction_plan_rejected',
+              reason: 'commander_offline',
+            }));
+            return;
+          }
+
+          const normalizedPlan = normalizeInstructionPlan(instructionPlanPayload);
+          const { blocks } = toLegacyBlocksAndTags(normalizedPlan);
+          const started = await runBuildCommandSingleFlight({
+            bot,
+            username,
+            commandType: 'instruction_plan',
+            busyMessage: "⏳ Bot is already running a build. Try again when it finishes.",
+            run: async () => executeCommands({
+              bot,
+              commands: blocks,
+              username,
+            }),
+          });
+
+          if (!started) {
+            ws.send(JSON.stringify({
+              type: 'instruction_plan_rejected',
+              reason: 'busy',
+            }));
+            return;
+          }
+
           ws.send(JSON.stringify({
             type: 'instruction_plan_applied',
             actionCount: normalizedPlan.actions.length,

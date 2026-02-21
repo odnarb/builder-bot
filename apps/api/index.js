@@ -179,6 +179,14 @@ const asyncHandler = fn => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+const optionalJwtCheck = (req, res, next) => {
+    if (!req.headers?.authorization) {
+        return next();
+    }
+
+    return jwtCheck(req, res, next);
+};
+
 /**
  * Resolve a stable per-user usage key for monthly token budgeting.
  * Falls back to anonymous keys when auth is not present.
@@ -1583,7 +1591,7 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
     });
 }))
 
-app.post('/ai-get-structure', asyncHandler(async (req, res) => {
+app.post('/ai-get-structure', optionalJwtCheck, asyncHandler(async (req, res) => {
     const requestStartedAtMs = Date.now();
     const { message, tier: rawTier, context = {}, includeSchematic = false } = req.body || {};
 
@@ -1591,8 +1599,25 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
         return res.status(400).json({ error: 'message is required' });
     }
 
+    const authUserId = req.auth?.payload?.sub || null;
     const moderationViolation = detectModerationViolation(message);
-    const tier = resolveTier(rawTier);
+    let tier = 'free';
+    if (authUserId) {
+        const user = getUserById(authUserId);
+        tier = resolveTier(user?.tier);
+    } else if (rawTier && resolveTier(rawTier) !== 'free') {
+        recordSecurityAuditEvent({
+            type: 'tier_override_ignored',
+            severity: 'info',
+            userKey: resolveAiUsageKey(req, 'free'),
+            tier: 'free',
+            message: 'Unauthenticated tier override ignored on /ai-get-structure.',
+            context: {
+                requestedTier: resolveTier(rawTier),
+            },
+        });
+    }
+
     const tierPolicy = getTierAiPolicy(tier);
     const tierFeaturePolicy = getTierFeaturePolicy(tier);
     const modelRoute = getTierModelRoute(tier);
