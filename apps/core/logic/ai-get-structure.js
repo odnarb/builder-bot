@@ -336,6 +336,13 @@ export function createAiGetStructureHandler(deps) {
         }
 
         try {
+            const isPatchReplanRequest = Boolean(
+                contextSnapshot?.taskState?.patchPlan ||
+                Number(contextSnapshot?.taskState?.replanAttempt || 0) > 0 ||
+                contextDiagnostics.triggerReason === 'build_failure' ||
+                contextDiagnostics.triggerReason === 'pathfinding_failure',
+            );
+            const requestMode = isPatchReplanRequest ? 'patch_replan' : 'initial_plan';
             const plannerSystemPrompt = `You are a Minecraft structure planner.
 Output JSON only with keys:
 {
@@ -346,10 +353,12 @@ Output JSON only with keys:
   "targetStyleTags": string[]
 }
 Keep concise and executable.
+${isPatchReplanRequest ? 'Patch replan mode: prioritize corrective edits near the failure area and avoid rebuilding everything.' : ''}
 ${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact deterministic phases.' : ''}`;
             const plannerUserPayload = JSON.stringify({
                 tier,
                 prompt: message,
+                requestMode,
                 context: contextSnapshot,
             });
             const plannerRequestStartedAtMs = Date.now();
@@ -382,6 +391,10 @@ ${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact determ
 Generate ONLY raw JSON in this shape:
 {
   "actions": [
+    { "type": "prepare_site", "label": "foundation" },
+    { "type": "flatten_area", "x": 0, "y": 64, "z": 0, "width": 8, "length": 8, "targetY": 64, "fillBlock": "minecraft:dirt" },
+    { "type": "clear_volume", "x": 0, "y": 65, "z": 0, "width": 8, "height": 4, "length": 8 },
+    { "type": "ensure_access", "x": 0, "y": 64, "z": 0, "radius": 2 },
     { "type": "move_to", "x": 0, "y": 64, "z": 0 },
     { "type": "place_block", "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
   ],
@@ -391,6 +404,10 @@ Rules:
 - Relative coordinates only.
 - Keep movement minimal and avoid micro-step loops.
 - Prefer placement actions; movement should be coarse navigation only.
+- Site prep actions are allowed: prepare_site, flatten_area, clear_volume, ensure_access.
+- If context terrain flatness is low or obstruction/hazard ratios are high, include prep actions before placement actions.
+- Keep prep bounded and proportional to structure size.
+- If requestMode is patch_replan, output a minimal corrective plan and avoid full restarts.
 - No markdown or explanations.
 - No illegal blocks.
 - Do not exceed tier constraints in planner notes.
@@ -405,6 +422,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 const executorUserPayload = JSON.stringify({
                     prompt: message,
                     tier,
+                    requestMode,
                     context: contextSnapshot,
                     plan: plannerCompletion.text,
                     previousValidationError: finalValidation?.errors?.[0]?.message || null,
@@ -690,6 +708,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                     },
                     marginAlertsTriggered: marginAlerts.triggered.length,
                     contextDiagnostics,
+                    requestMode,
                     emergencyGuard: {
                         active: emergencyGuardState.active,
                         reason: emergencyGuardState.reason,

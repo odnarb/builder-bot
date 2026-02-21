@@ -7,6 +7,8 @@ import {
 const HARD_COORDINATE_LIMIT = 2048;
 const DEFAULT_MAX_FILL_VOLUME = 60_000;
 const DEFAULT_MAX_MOVE_ACTIONS = 20;
+const DEFAULT_MAX_PREP_ACTIONS = 12;
+const DEFAULT_MAX_PREP_VOLUME_RATIO = 0.5;
 
 const ALWAYS_BLOCKED_BLOCKS = new Set([
     'minecraft:barrier',
@@ -57,6 +59,30 @@ function computePlacementVolume(placements) {
 }
 
 /**
+ * Estimate prep volume impact for non-placement actions.
+ * @param {Record<string, unknown>} action
+ * @returns {number}
+ */
+function estimatePrepVolume(action) {
+    if (action?.type === 'flatten_area') {
+        return Math.max(0, Number(action.width || 0)) * Math.max(0, Number(action.length || 0));
+    }
+
+    if (action?.type === 'clear_volume') {
+        return Math.max(0, Number(action.width || 0))
+            * Math.max(0, Number(action.height || 0))
+            * Math.max(0, Number(action.length || 0));
+    }
+
+    if (action?.type === 'ensure_access') {
+        const radius = Math.max(0, Number(action.radius || 0));
+        return Math.ceil(Math.PI * radius * radius);
+    }
+
+    return 0;
+}
+
+/**
  * Validate a normalized instruction plan against safety and tier limits.
  * @param {{
  *   planPayload: unknown,
@@ -82,6 +108,8 @@ function computePlacementVolume(placements) {
  *     followCount: number,
  *     stopCount: number,
  *     fillVolume: number,
+ *     prepActionCount: number,
+ *     prepVolume: number,
  *   },
  *   errors: Array<{ code: string, message: string, actionIndex?: number, block?: string }>,
  *   warnings: Array<{ code: string, message: string }>,
@@ -111,6 +139,8 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
                 followCount: 0,
                 stopCount: 0,
                 fillVolume: 0,
+                prepActionCount: 0,
+                prepVolume: 0,
             },
             errors,
             warnings,
@@ -120,6 +150,14 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
 
     const maxBlocksPerBuild = Math.max(1, toFiniteNumber(tierFeaturePolicy?.maxBlocksPerBuild, 2000));
     const maxBuildVolume = Math.max(1, toFiniteNumber(tierFeaturePolicy?.maxBuildVolume, DEFAULT_MAX_FILL_VOLUME));
+    const maxPrepActions = Math.max(1, toFiniteNumber(tierFeaturePolicy?.maxPrepActions, DEFAULT_MAX_PREP_ACTIONS));
+    const maxPrepVolume = Math.max(
+        1,
+        Math.min(
+            maxBuildVolume,
+            toFiniteNumber(tierFeaturePolicy?.maxPrepVolume, Math.floor(maxBuildVolume * DEFAULT_MAX_PREP_VOLUME_RATIO)),
+        ),
+    );
     const allowCommandBlocks = tierFeaturePolicy?.allowCommandBlocks === true;
     const stats = getInstructionPlanStats(normalizedPlan);
 
@@ -175,7 +213,13 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
     }
 
     for (const [actionIndex, action] of normalizedPlan.actions.entries()) {
-        if (action.type !== 'place_block' && action.type !== 'move_to') {
+        if (
+            action.type !== 'place_block' &&
+            action.type !== 'move_to' &&
+            action.type !== 'flatten_area' &&
+            action.type !== 'clear_volume' &&
+            action.type !== 'ensure_access'
+        ) {
             continue;
         }
 
@@ -192,6 +236,29 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
         }
     }
 
+    const prepActions = normalizedPlan.actions.filter((action) => (
+        action.type === 'prepare_site' ||
+        action.type === 'flatten_area' ||
+        action.type === 'clear_volume' ||
+        action.type === 'ensure_access'
+    ));
+    const prepActionCount = prepActions.length;
+    const prepVolume = prepActions.reduce((sum, action) => sum + estimatePrepVolume(action), 0);
+
+    if (prepActionCount > maxPrepActions) {
+        errors.push({
+            code: 'prep_action_count_exceeded',
+            message: `Plan has ${prepActionCount} prep actions; cap is ${maxPrepActions}.`,
+        });
+    }
+
+    if (prepVolume > maxPrepVolume) {
+        errors.push({
+            code: 'prep_volume_exceeded',
+            message: `Prep volume ${prepVolume} exceeds cap ${maxPrepVolume}.`,
+        });
+    }
+
     const fillVolume = computePlacementVolume(placementActions.map(({ action }) => action));
     if (fillVolume > maxBuildVolume) {
         errors.push({
@@ -206,6 +273,8 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
         stats: {
             ...stats,
             fillVolume,
+            prepActionCount,
+            prepVolume,
         },
         errors,
         warnings,

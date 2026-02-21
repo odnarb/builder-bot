@@ -57,6 +57,37 @@ test('toLegacyBlocksAndTags keeps backward-compatible shape', () => {
   assert.deepEqual(legacy.tags, ['demo']);
 });
 
+test('normalizeInstructionPlan supports site prep action families', () => {
+  const plan = normalizeInstructionPlan({
+    actions: [
+      { type: 'prepare_site', label: 'foundation' },
+      { type: 'flatten_area', x: 0, y: 64, z: 0, width: 6, length: 6, targetY: 63, fillBlock: 'dirt' },
+      { type: 'clear_volume', x: 0, y: 65, z: 0, width: 6, height: 3, length: 6 },
+      { type: 'ensure_access', x: 0, y: 64, z: 0, radius: 3 },
+    ],
+  });
+
+  assert.equal(plan.actions[0].type, 'prepare_site');
+  assert.equal(plan.actions[1].type, 'flatten_area');
+  assert.equal(plan.actions[1].fillBlock, 'minecraft:dirt');
+  assert.equal(plan.actions[2].type, 'clear_volume');
+  assert.equal(plan.actions[3].type, 'ensure_access');
+});
+
+test('toLegacyBlocksAndTags preserves site prep actions', () => {
+  const plan = normalizeInstructionPlan({
+    actions: [
+      { type: 'flatten_area', x: 1, y: 64, z: 1, width: 4, length: 4, targetY: 64, fillBlock: 'stone' },
+      { type: 'clear_volume', x: 1, y: 65, z: 1, width: 4, height: 2, length: 4 },
+    ],
+  });
+
+  const legacy = toLegacyBlocksAndTags(plan);
+  assert.equal(legacy.blocks[0].type, 'flatten_area');
+  assert.equal(legacy.blocks[0].fillBlock, 'minecraft:stone');
+  assert.equal(legacy.blocks[1].type, 'clear_volume');
+});
+
 test('getInstructionPlanStats returns action counts', () => {
   const plan = normalizeInstructionPlan({
     actions: [
@@ -85,5 +116,14 @@ test('normalizeInstructionPlan rejects unsupported action types', () => {
   assert.throws(
     () => normalizeInstructionPlan({ actions: [{ type: 'teleport', x: 0, y: 0, z: 0 }] }),
     /Unsupported action type/,
+  );
+});
+
+test('normalizeInstructionPlan rejects invalid prep dimensions', () => {
+  assert.throws(
+    () => normalizeInstructionPlan({
+      actions: [{ type: 'flatten_area', x: 0, y: 64, z: 0, width: 0, length: 4 }],
+    }),
+    /"width" must be between/,
   );
 });

@@ -7,6 +7,7 @@ import { handlePlayerCommand } from './command-router.js';
 import { addLogEntry, createSession, getUserTier } from './apiClient.js';
 import { resolveTier } from '../api/config/tier-policy.js';
 import { isCommanderChatSender } from './player-identity.js';
+import { ensurePathfinderTelemetry } from './world-context.js';
 
 //current user info
 const COMMANDER_UUID = process.env.COMMANDER_UUID || "123-123-1234"
@@ -82,6 +83,7 @@ bot.once('spawn', async () => {
 
   await bot.waitForChunksToLoad(); // ensures blocks are loaded
   await bot.waitForTicks(20);      // slight extra delay just in case
+  ensurePathfinderTelemetry(bot);
 
   // Enable WebSocket control
   startBotServer({ bot, commander });
