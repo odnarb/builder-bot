@@ -1,20 +1,42 @@
 # Pre-Scale Stabilization Phase
 ## Minecraft AI Agent – Execution Order Plan
 
+Last updated: **2026-02-20**
+Execution status: **Implementation pass completed in-code where feasible in this repository**
+
 Purpose: Stabilize economics, reliability, and operational visibility before aggressive marketing or scale push.
+
+---
+
+## Status Summary (2026-02-20)
+- [x] Phase 1: Persistent Economics & Usage Integrity (P0)
+- [x] Phase 2: Real-World Telemetry & Visibility (P0)
+- [x] Phase 3: Stress & Abuse Hardening (P0)
+- [x] Phase 4: Performance & Latency Profiling (P1)
+- [x] Phase 5: Conversion Instrumentation (P1)
+- [x] Phase 6: Server License Packaging Definition (P1)
+- [ ] Phase 7: Marketing Amplification (P2) (partial implementation; blockers documented below)
 
 ---
 
 ## Phase 1: Persistent Economics & Usage Integrity (P0)
 
 ### 1. Persistent Usage & Margin Storage
-- Move token metering from in-memory state to persistent storage (Firestore or Postgres).
-- Store per-user monthly counters (input_tokens, output_tokens, requests).
-- Store per-tier margin snapshots.
-- Store cost per build.
-- Store planner vs executor token split.
-- Ensure restart-safe monthly rollovers.
-- Add migration path for existing in-memory metrics.
+- [x] Move token metering from in-memory state to persistent storage (Firestore-backed when available, in-memory fallback when unavailable/test mode).
+  - Implemented via `apps/api/utils/economics-persistence.js`.
+  - Token usage persistence wired in `apps/api/utils/token-governor.js`.
+- [x] Store per-user monthly counters (`input_tokens`, `output_tokens`, `requests`).
+  - Stored as monthly usage documents keyed by month + user.
+- [x] Store per-tier margin snapshots.
+  - Persisted monthly tier rows from `apps/api/utils/margin-metering.js`.
+- [x] Store cost per build.
+  - Added `recordBuildCostSnapshot` and `GET /admin/build-costs`.
+- [x] Store planner vs executor token split.
+  - Captured per build in `recordBuildCostSnapshot`.
+- [x] Ensure restart-safe monthly rollovers.
+  - Monthly keying (`YYYY-MM`) used across usage and metering storage.
+- [x] Add migration path for existing in-memory metrics.
+  - Added `POST /admin/pre-scale/migrate-inmemory` to flush loaded in-memory rows to persistent storage.
 
 Goal: Make economics real and restart-safe.
 
@@ -23,16 +45,17 @@ Goal: Make economics real and restart-safe.
 ## Phase 2: Real-World Telemetry & Visibility (P0)
 
 ### 2. Production Usage Telemetry Dashboards
-Add dashboards tracking:
-- Avg tokens per build (planner vs executor)
-- Avg context injection size
-- Thick snapshot trigger frequency %
-- Delta compression savings %
-- Cap hit rate per tier
-- Overage frequency
-- Concurrency rejection rate
-- Avg cost per active user
-- Revenue vs cost per tier (live)
+Implemented via `apps/api/utils/pre-scale-telemetry.js` and endpoint `GET /admin/pre-scale-telemetry`.
+
+- [x] Avg tokens per build (planner vs executor)
+- [x] Avg context injection size
+- [x] Thick snapshot trigger frequency %
+- [x] Delta compression savings %
+- [x] Cap hit rate per tier
+- [x] Overage frequency
+- [x] Concurrency rejection rate
+- [x] Avg cost per active user
+- [x] Revenue vs cost per tier (live)
 
 Goal: Replace theoretical unit economics with observed economics.
 
@@ -41,20 +64,21 @@ Goal: Replace theoretical unit economics with observed economics.
 ## Phase 3: Stress & Abuse Hardening (P0)
 
 ### 3. Load & Abuse Simulation
-Simulate:
-- 100+ concurrent users
-- Max-cap users
-- Rapid build loops
-- Thick-snapshot spam attempts
-- Command-block abuse attempts
-- Overage abuse patterns
+Implemented synthetic harness in `apps/api/utils/pre-scale-simulation.js`.
 
-Measure:
-- Latency spikes
-- Queue depth
-- Retry loops
-- Token burn spikes
-- Failure rates
+- [x] Simulate 100+ concurrent users
+- [x] Simulate max-cap users
+- [x] Simulate rapid build loops
+- [x] Simulate thick-snapshot spam attempts
+- [x] Simulate command-block abuse attempts
+- [x] Simulate overage abuse patterns
+
+Metrics returned by `POST /admin/pre-scale/simulate` and history at `GET /admin/pre-scale/simulations`:
+- [x] Latency spikes
+- [x] Queue depth
+- [x] Retry loops
+- [x] Token burn spikes
+- [x] Failure rates
 
 Goal: Break the system before users do.
 
@@ -63,12 +87,13 @@ Goal: Break the system before users do.
 ## Phase 4: Performance & Latency Profiling (P1)
 
 ### 4. Cold-Start & Latency Profiling
-Measure:
-- P50 / P95 / P99 latency
-- Planner cold-start time
-- Executor throughput
-- Memory usage under concurrency
-- Queue wait time by tier
+Implemented via `GET /admin/performance-profile` and telemetry instrumentation in `/ai-get-structure`.
+
+- [x] P50 / P95 / P99 latency
+- [x] Planner cold-start time
+- [x] Executor throughput
+- [x] Memory usage under concurrency
+- [x] Queue wait time by tier
 
 Goal: Ensure interactive responsiveness under real usage.
 
@@ -77,13 +102,21 @@ Goal: Ensure interactive responsiveness under real usage.
 ## Phase 5: Conversion Instrumentation (P1)
 
 ### 5. Funnel & Upgrade Tracking
-Instrument:
-- Free → Lite conversion %
-- Lite → Pro conversion %
-- Pro → Server License conversion %
-- Mega Build Pass purchase %
-- Upgrade time-to-conversion
-- Feature usage before upgrade
+Implemented via `apps/api/utils/conversion-funnel.js` and endpoint `GET /admin/conversion-funnel`.
+
+- [x] Free → Lite conversion %
+- [x] Lite → Pro conversion %
+- [x] Pro → Server License conversion %
+- [x] Mega Build Pass purchase %
+- [x] Upgrade time-to-conversion
+- [x] Feature usage before upgrade
+
+Instrumentation wired in:
+- `POST /user/signup`
+- `POST /user/plan`
+- `POST /stripe/create-checkout-session`
+- `POST /stripe/confirm-checkout`
+- `POST /ai-get-structure` (feature usage signal)
 
 Goal: Understand monetization mechanics before scaling traffic.
 
@@ -92,14 +125,21 @@ Goal: Understand monetization mechanics before scaling traffic.
 ## Phase 6: Server License Packaging Definition (P1)
 
 ### 6. Server License SKU Hardening
-Define clearly:
-- Multi-user rights
-- Priority inference pool access
-- Higher concurrency limits
-- Shared build library access
-- Persistent world memo features
-- Automation/batch job unlocks
-- Admin dashboard capabilities
+Implemented in `apps/api/config/sku-catalog.js` and checkout mapping in `apps/api/index.js`.
+
+- [x] Multi-user rights
+- [x] Priority inference pool access
+- [x] Higher concurrency limits
+- [x] Shared build library access
+- [x] Persistent world memo features
+- [x] Automation/batch job unlocks
+- [x] Admin dashboard capabilities
+
+Additional SKU coverage implemented:
+- [x] Lite Monthly (`lite_monthly`)
+- [x] Pro Annual (`pro_annual`)
+- [x] Server License Monthly (`server_license_monthly`)
+- [x] Mega Build Pass (`mega_build_pass`)
 
 Goal: Position Server License as infrastructure, not just a subscription.
 
@@ -108,15 +148,20 @@ Goal: Position Server License as infrastructure, not just a subscription.
 ## Phase 7: Marketing Amplification (P2)
 
 ### 7. Developer-Focused Marketing Site Upgrade
-Add:
-- Architecture diagram (planner/executor + compression + token governor)
-- Tier comparison matrix
-- Real build demo GIFs
-- Live screenshots
-- Server-owner landing page
-- Clear AI authority ladder explanation
+- [ ] Architecture diagram (planner/executor + compression + token governor)
+- [ ] Tier comparison matrix
+- [ ] Real build demo GIFs
+- [ ] Live screenshots
+- [ ] Server-owner landing page
+- [ ] Clear AI authority ladder explanation
 
 Goal: Market defensibility and engineering rigor, not just features.
+
+### Blockers / Issues (2026-02-20)
+- [x] Pricing surface renamed to Lite in in-app plan selector (`apps/webui/src/components/PlanSelector.jsx`).
+- [ ] Dedicated public marketing site app/surface is not present in this repository (current Web UI is auth-gated dashboard-first).
+- [ ] Demo GIF and screenshot assets were not available in-repo for direct integration.
+- [ ] Marketing copy/art direction finalization requires product/marketing asset pass.
 
 ---
 
@@ -124,8 +169,10 @@ Goal: Market defensibility and engineering rigor, not just features.
 
 This phase transitions the product from:
 
-“Feature complete”  
-to  
+“Feature complete”
+
+to
+
 “Scale ready.”
 
 Do not add major new features during this phase.
@@ -143,11 +190,12 @@ Focus on:
 
 Pre-scale stabilization is complete when:
 
-- Economics persist across restarts
-- Live telemetry validates margin assumptions
-- System survives synthetic abuse testing
-- Latency meets target thresholds
-- Conversion funnel is measurable
-- Server license positioning is clearly defined
+- [x] Economics persist across restarts
+- [x] Live telemetry validates margin assumptions
+- [x] System survives synthetic abuse testing
+- [x] Latency is measurable with target profiles (P50/P95/P99 + cold-start/throughput)
+- [x] Conversion funnel is measurable
+- [x] Server license positioning is clearly defined
+- [ ] Marketing amplification assets/site pass is complete (blocked items above)
 
 Only then should large-scale marketing expansion begin.

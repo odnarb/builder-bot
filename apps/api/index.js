@@ -43,6 +43,7 @@ import {
 import {
     finalizeUsage,
     getUsageSnapshot,
+    migrateInMemoryUsageBucketsToPersistentStore,
     releaseInFlightSlot,
     reserveUsage,
 } from './utils/token-governor.js';
@@ -54,11 +55,33 @@ import {
 import { validateInstructionPlan } from './utils/build-validator.js';
 import {
     evaluateBreakEvenAlerts,
+    getBuildCostSnapshots,
     getBreakEvenAlerts,
     getMonthlyMarginReport,
     getUsageMeteringRows,
+    migrateInMemoryUsageMeteringToPersistentStore,
+    recordBuildCostSnapshot,
     recordUsageMetering,
 } from './utils/margin-metering.js';
+import {
+    getPreScalePerformanceProfile,
+    getPreScaleTelemetryDashboard,
+    migrateInMemoryPreScaleTelemetryToPersistentStore,
+    recordPreScaleBuildSuccess,
+    recordPreScaleRequestFailure,
+    recordPreScaleRequestStart,
+} from './utils/pre-scale-telemetry.js';
+import {
+    getPreScaleSimulationRuns,
+    runPreScaleSimulation,
+} from './utils/pre-scale-simulation.js';
+import {
+    getConversionFunnelReport,
+    recordCheckoutStarted,
+    recordFeatureUsageSignal,
+    recordSignupLifecycle,
+    recordTierUpgrade,
+} from './utils/conversion-funnel.js';
 import {
     getSecurityAuditEvents,
     recordSecurityAuditEvent,
@@ -101,6 +124,7 @@ import {
     redeemReferralCode,
 } from './utils/referrals.js';
 import {
+    getOverageRateUsdPer1k,
     getOverageReport,
     getUserOverageSnapshot,
     recordOverageUsage,
@@ -279,6 +303,13 @@ const MODERATION_BLOCKLIST = Object.freeze([
     'terrorism',
     'hate crime',
 ]);
+
+const INFRA_COST_PER_REQUEST_USD = Object.freeze({
+    free: 0.0005,
+    starter: 0.0003,
+    pro: 0.00024,
+    admin: 0.0002,
+});
 
 /**
  * Basic moderation filter for user prompts.
@@ -459,6 +490,13 @@ app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
             });
         }
 
+        if (userId) {
+            await recordSignupLifecycle({
+                userId,
+                tier: 'free',
+            });
+        }
+
         return res.status(200).json({ success: true });
     } catch (err) {
         console.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
@@ -470,12 +508,22 @@ app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
     try {
         const { tier } = req.body;
         const userId = req.auth.payload.sub;
+        const user = await getUserById({ userId });
+        const fromTier = resolveTier(user?.tier || 'free');
 
         if (!['free', 'starter', 'pro', 'admin'].includes(tier)) {
             return res.status(400).json({ error: 'Invalid tier selected' });
         }
 
         await updateUserTier({ userId, tier });
+        if (fromTier !== tier) {
+            await recordTierUpgrade({
+                userId,
+                fromTier,
+                toTier: tier,
+                skuCode: `${tier}_manual`,
+            });
+        }
 
         res.json({ status: 'updated', tier });
     } catch (err) {
@@ -1103,9 +1151,13 @@ app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, r
 
     // Map SKU → Stripe product id
     const productMap = {
+        lite_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         starter_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         pro_monthly: process.env.STRIPE_PRODUCT_ID_PRO_TIER,
+        pro_annual: process.env.STRIPE_PRODUCT_ID_PRO_ANNUAL,
         admin_monthly: process.env.STRIPE_PRODUCT_ID_ADMIN_TIER,
+        server_license_monthly: process.env.STRIPE_PRODUCT_ID_SERVER_LICENSE,
+        mega_build_pass: process.env.STRIPE_PRODUCT_ID_MEGA_BUILD_PASS,
     };
 
     const { username, tier, skuCode, termsVersion, privacyVersion } = req.body || {};
@@ -1136,6 +1188,16 @@ app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, r
     }
 
     try {
+        if (userId) {
+            const user = await getUserById({ userId });
+            await recordCheckoutStarted({
+                userId,
+                fromTier: resolveTier(user?.tier || 'free'),
+                toTier: checkoutSku.tier,
+                skuCode: checkoutSku.code,
+            });
+        }
+
         const products = await stripe.products.list({ limit: 100 });
         const product = products.data.find(p => p.id === productMap[checkoutSku.code]);
         const price = product?.default_price;
@@ -1193,7 +1255,14 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
     });
 
     const user = await getUserById({ userId });
+    const fromTier = resolveTier(user?.tier || 'free');
     await updateUserTier({ userId: user.id, tier: metadataTier });
+    await recordTierUpgrade({
+        userId,
+        fromTier,
+        toTier: metadataTier,
+        skuCode,
+    });
 
     if (session.subscription && typeof session.subscription === 'object') {
         const periodEndUnix = Number(session.subscription.current_period_end || 0);
@@ -1232,6 +1301,10 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     const modelRoute = getTierModelRoute(tier);
     const usageKey = resolveAiUsageKey(req, tier);
     const canaryVariantEnabled = isInCanaryRollout({ usageKey });
+    await recordPreScaleRequestStart({
+        userKey: usageKey,
+        tier,
+    });
     recordAbuseSignal({
         userKey: usageKey,
         channel: 'build',
@@ -1239,8 +1312,17 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
         severity: 'low',
         metadata: { tier },
     });
+    const contextPreparationStartedAtMs = Date.now();
 
     if (!tierFeaturePolicy.allowBuilds) {
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: false,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
+        });
         return res.status(403).json({
             error: `Build generation is not available for tier "${tier}".`,
         });
@@ -1264,6 +1346,14 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
             severity: 'high',
             metadata: { moderationViolation },
         });
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: false,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
+        });
         return res.status(400).json({
             error: 'Prompt could not be processed due to safety policy.',
         });
@@ -1283,6 +1373,14 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
             signal: 'build_quota_rejected',
             severity: 'medium',
             metadata: { tier },
+        });
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: true,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
         });
         recordAiRequestEnd({
             success: false,
@@ -1318,6 +1416,14 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
             severity: 'medium',
             metadata: { estimatedInputTokens, tier },
         });
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: true,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
+        });
         recordAiRequestEnd({
             success: false,
             blockedPlan: true,
@@ -1337,22 +1443,40 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     let overageFinalization = { requestOverage: 0, inputOverageTokens: 0, outputOverageTokens: 0 };
     let overageLedger = null;
     let suspiciousUsage = false;
+    let queueWaitMs = 0;
+    let plannerInputTokens = 0;
+    let plannerOutputTokens = 0;
+    let plannerDurationMs = 0;
+    let executorInputTokens = 0;
+    let executorOutputTokens = 0;
+    let executorDurationMs = 0;
+    let executorActionCount = 0;
 
     try {
-        overageReservation = reserveUsage({
+        overageReservation = await reserveUsage({
             userKey: usageKey,
             estimatedInputTokens,
             tierPolicy,
         });
-        setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
+        queueWaitMs = Date.now() - contextPreparationStartedAtMs;
+        setQueueDepth({ depth: (await getUsageSnapshot(usageKey)).inFlight });
         usageReserved = true;
     } catch (usageError) {
+        const concurrencyRejected = /concurrency limit reached/i.test(String(usageError?.message || ''));
         recordAbuseSignal({
             userKey: usageKey,
             channel: 'api',
             signal: 'usage_quota_rejected',
             severity: 'medium',
             metadata: { tier },
+        });
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: true,
+            concurrencyRejected,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
         });
         recordAiRequestEnd({
             success: false,
@@ -1364,13 +1488,7 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     }
 
     try {
-        const plannerCompletion = await createCompletionWithFallback({
-            primaryModel: modelRoute.plannerModel,
-            fallbackModel: modelRoute.fallbackModel,
-            messages: [
-                {
-                    role: 'system',
-                    content: `You are a Minecraft structure planner.
+        const plannerSystemPrompt = `You are a Minecraft structure planner.
 Output JSON only with keys:
 {
   "intent": string,
@@ -1380,19 +1498,31 @@ Output JSON only with keys:
   "targetStyleTags": string[]
 }
 Keep concise and executable.
-${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact deterministic phases.' : ''}`,
+${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact deterministic phases.' : ''}`;
+        const plannerUserPayload = JSON.stringify({
+            tier,
+            prompt: message,
+            context: contextSnapshot,
+        });
+        const plannerRequestStartedAtMs = Date.now();
+        const plannerCompletion = await createCompletionWithFallback({
+            primaryModel: modelRoute.plannerModel,
+            fallbackModel: modelRoute.fallbackModel,
+            messages: [
+                {
+                    role: 'system',
+                    content: plannerSystemPrompt,
                 },
                 {
                     role: 'user',
-                    content: JSON.stringify({
-                        tier,
-                        prompt: message,
-                        context: contextSnapshot,
-                    }),
+                    content: plannerUserPayload,
                 },
             ],
             maxTokens: Math.min(900, tierPolicy.maxOutputTokensPerRequest),
         });
+        plannerDurationMs = Date.now() - plannerRequestStartedAtMs;
+        plannerInputTokens = estimateTokenCountFromText(plannerSystemPrompt) + estimateTokenCountFromText(plannerUserPayload);
+        plannerOutputTokens = estimateTokenCountFromText(plannerCompletion.text);
 
         const maxExecutorAttempts = (
             contextDiagnostics.triggerReason === 'pathfinding_failure' ||
@@ -1400,20 +1530,7 @@ ${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact determ
         )
             ? 3
             : 2;
-
-        let finalPlan = null;
-        let finalValidation = null;
-        let executorCompletion = null;
-
-        for (let attempt = 1; attempt <= maxExecutorAttempts; attempt += 1) {
-            executorAttempts = attempt;
-            executorCompletion = await createCompletionWithFallback({
-                primaryModel: modelRoute.executorModel,
-                fallbackModel: modelRoute.fallbackModel,
-                messages: [
-                    {
-                        role: 'system',
-                        content: `You are a Minecraft building assistant.
+        const executorSystemPrompt = `You are a Minecraft building assistant.
 Generate ONLY raw JSON in this shape:
 {
   "actions": [
@@ -1429,23 +1546,42 @@ Rules:
 - No markdown or explanations.
 - No illegal blocks.
 - Do not exceed tier constraints in planner notes.
-${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' : ''}`,
+${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' : ''}`;
+
+        let finalPlan = null;
+        let finalValidation = null;
+        let executorCompletion = null;
+
+        for (let attempt = 1; attempt <= maxExecutorAttempts; attempt += 1) {
+            executorAttempts = attempt;
+            const executorUserPayload = JSON.stringify({
+                prompt: message,
+                tier,
+                context: contextSnapshot,
+                plan: plannerCompletion.text,
+                previousValidationError: finalValidation?.errors?.[0]?.message || null,
+                attempt,
+                maxExecutorAttempts,
+            });
+            const executorRequestStartedAtMs = Date.now();
+            executorCompletion = await createCompletionWithFallback({
+                primaryModel: modelRoute.executorModel,
+                fallbackModel: modelRoute.fallbackModel,
+                messages: [
+                    {
+                        role: 'system',
+                        content: executorSystemPrompt,
                     },
                     {
                         role: 'user',
-                        content: JSON.stringify({
-                            prompt: message,
-                            tier,
-                            context: contextSnapshot,
-                            plan: plannerCompletion.text,
-                            previousValidationError: finalValidation?.errors?.[0]?.message || null,
-                            attempt,
-                            maxExecutorAttempts,
-                        }),
+                        content: executorUserPayload,
                     },
                 ],
                 maxTokens: tierPolicy.maxOutputTokensPerRequest,
             });
+            executorDurationMs += Date.now() - executorRequestStartedAtMs;
+            executorInputTokens += estimateTokenCountFromText(executorSystemPrompt) + estimateTokenCountFromText(executorUserPayload);
+            executorOutputTokens += estimateTokenCountFromText(executorCompletion.text);
 
             try {
                 const result = parseAndValidateExecutorPlan({
@@ -1523,19 +1659,20 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
             finalValidation = fallbackValidation;
             fallbackPlanUsed = true;
         }
+        executorActionCount = Array.isArray(finalPlan?.actions) ? finalPlan.actions.length : 0;
 
         const legacyBlocksAndTags = toLegacyBlocksAndTags(finalPlan);
         const normalizedBlocksAndTags = JSON.stringify(legacyBlocksAndTags);
         const estimatedOutputTokens = estimateTokenCountFromText(normalizedBlocksAndTags);
 
         try {
-            overageFinalization = finalizeUsage({
+            overageFinalization = await finalizeUsage({
                 userKey: usageKey,
                 estimatedOutputTokens,
                 tierPolicy,
             });
             usageFinalized = true;
-            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
+            setQueueDepth({ depth: (await getUsageSnapshot(usageKey)).inFlight });
         } catch (usageError) {
             recordAbuseSignal({
                 userKey: usageKey,
@@ -1544,6 +1681,14 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 severity: 'medium',
                 metadata: { tier },
             });
+            await recordPreScaleRequestFailure({
+                userKey: usageKey,
+                tier,
+                capHit: true,
+                concurrencyRejected: false,
+                latencyMs: Date.now() - requestStartedAtMs,
+                queueWaitMs,
+            });
             recordAiRequestEnd({
                 success: false,
                 queueRejected: true,
@@ -1551,7 +1696,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 retried: Math.max(0, executorAttempts - 1),
                 blockedPlan: planValidationHadFailures,
             });
-            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
+            setQueueDepth({ depth: (await getUsageSnapshot(usageKey)).inFlight });
             setActiveSessions({ count: getOpsDashboardSnapshot().activeAiRequests });
             return res.status(429).json({ error: usageError.message });
         }
@@ -1586,7 +1731,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
             });
         }
 
-        const metering = recordUsageMetering({
+        const metering = await recordUsageMetering({
             userKey: usageKey,
             tier,
             inputTokens: estimatedInputTokens,
@@ -1597,8 +1742,56 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
             (estimatedOutputTokens * 0.60)
         ) / 1_000_000;
         recordTokenBurn({ usd: estimatedTokenBurnUsd });
+        const overageCostUsd = ((totalOverageInputTokens + totalOverageOutputTokens) / 1000) * getOverageRateUsdPer1k(tier);
+        const infraCostUsd = INFRA_COST_PER_REQUEST_USD[tier] || 0;
+        const totalCostUsd = estimatedTokenBurnUsd + infraCostUsd + overageCostUsd;
+        const buildId = `build_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const contextInjectionTokens = estimateTokenCountFromText(JSON.stringify(contextSnapshot || {}));
+        const contextBaselineTokens = estimateTokenCountFromText(JSON.stringify(contextForSnapshot || {}));
+        await recordBuildCostSnapshot({
+            buildId,
+            month: metering.month,
+            userKey: usageKey,
+            tier,
+            inputTokens: estimatedInputTokens,
+            outputTokens: estimatedOutputTokens,
+            plannerInputTokens,
+            plannerOutputTokens,
+            executorInputTokens,
+            executorOutputTokens,
+            apiCostUsd: estimatedTokenBurnUsd,
+            infraCostUsd,
+            overageCostUsd,
+        });
+        await recordPreScaleBuildSuccess({
+            userKey: usageKey,
+            tier,
+            month: metering.month,
+            plannerInputTokens,
+            plannerOutputTokens,
+            executorInputTokens,
+            executorOutputTokens,
+            contextInjectionTokens,
+            contextBaselineTokens,
+            snapshotMode: contextDiagnostics.snapshotMode,
+            overageUsed: totalOverageInputTokens + totalOverageOutputTokens + totalOverageRequests > 0,
+            totalCostUsd,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs,
+            plannerModel: plannerCompletion.modelUsed,
+            plannerDurationMs,
+            executorActions: executorActionCount,
+            executorDurationMs,
+        });
+        if (req.auth?.payload?.sub) {
+            await recordFeatureUsageSignal({
+                userId: req.auth.payload.sub,
+                tier,
+                feature: 'build_generation',
+            });
+        }
 
-        const marginAlerts = evaluateBreakEvenAlerts({ month: metering.month });
+        const marginAlerts = await evaluateBreakEvenAlerts({ month: metering.month });
         const schematic = includeSchematic === true
             ? exportInstructionPlanToSchematic({
                 name: `${tier}-build-${Date.now()}`,
@@ -1632,7 +1825,14 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 executorAttempts,
                 estimatedInputTokens,
                 estimatedOutputTokens,
-                usage: getUsageSnapshot(usageKey),
+                buildId,
+                tokenSplit: {
+                    plannerInputTokens,
+                    plannerOutputTokens,
+                    executorInputTokens,
+                    executorOutputTokens,
+                },
+                usage: await getUsageSnapshot(usageKey),
                 buildUsage: getBuildUsageSnapshot(usageKey),
                 metering,
                 overage: overageLedger,
@@ -1646,9 +1846,17 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
         });
     } catch (err) {
         if (usageReserved && !usageFinalized) {
-            releaseInFlightSlot(usageKey);
-            setQueueDepth({ depth: getUsageSnapshot(usageKey).inFlight });
+            await releaseInFlightSlot(usageKey);
+            setQueueDepth({ depth: (await getUsageSnapshot(usageKey)).inFlight });
         }
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: false,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs,
+        });
         recordBuildFailure({ userKey: usageKey });
         recordCrash();
         recordAbuseSignal({
@@ -1685,7 +1893,7 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
  */
 app.get('/admin/usage-metering', asyncHandler(async (req, res) => {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
-    const rows = getUsageMeteringRows({ month });
+    const rows = await getUsageMeteringRows({ month });
     const resolvedMonth = rows[0]?.month || month || null;
     return res.json({ month: resolvedMonth, rows });
 }));
@@ -1700,7 +1908,7 @@ app.get('/admin/margin-report', asyncHandler(async (req, res) => {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
     const thresholdPercent = Number(req.query.thresholdPercent);
 
-    const report = getMonthlyMarginReport({
+    const report = await getMonthlyMarginReport({
         month,
         thresholdPercent: Number.isFinite(thresholdPercent) ? thresholdPercent : undefined,
     });
@@ -1716,6 +1924,105 @@ app.get('/admin/margin-report', asyncHandler(async (req, res) => {
 app.get('/admin/margin-alerts', asyncHandler(async (req, res) => {
     const month = typeof req.query.month === 'string' ? req.query.month : undefined;
     return res.json(getBreakEvenAlerts({ month }));
+}));
+
+/**
+ * Return pre-scale economics and usage telemetry dashboard.
+ */
+app.get('/admin/pre-scale-telemetry', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const marginRows = await getUsageMeteringRows({ month });
+    const marginByTier = Object.fromEntries(
+        marginRows.map((row) => [row.tier, { revenue: row.revenue, totalCost: row.totalCost }]),
+    );
+
+    return res.json(await getPreScaleTelemetryDashboard({
+        month,
+        marginByTier,
+    }));
+}));
+
+/**
+ * Return latency and performance profile metrics for pre-scale readiness.
+ */
+app.get('/admin/performance-profile', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    return res.json(await getPreScalePerformanceProfile({ month }));
+}));
+
+/**
+ * Return tracked per-build cost snapshots.
+ */
+app.get('/admin/build-costs', asyncHandler(async (req, res) => {
+    const month = typeof req.query.month === 'string' ? req.query.month : undefined;
+    const tier = typeof req.query.tier === 'string' ? req.query.tier : undefined;
+    const limit = Number(req.query.limit);
+    return res.json({
+        month: month || null,
+        rows: getBuildCostSnapshots({
+            month,
+            tier,
+            limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+    });
+}));
+
+/**
+ * Return conversion funnel and upgrade instrumentation summary.
+ */
+app.get('/admin/conversion-funnel', asyncHandler(async (req, res) => {
+    const days = Number(req.query.days);
+    return res.json(getConversionFunnelReport({
+        days: Number.isFinite(days) ? days : undefined,
+    }));
+}));
+
+/**
+ * Execute a synthetic stress/abuse simulation suite.
+ */
+app.post('/admin/pre-scale/simulate', asyncHandler(async (req, res) => {
+    const {
+        seed,
+        concurrentUsers,
+        requestsPerUser,
+        tiers,
+    } = req.body || {};
+
+    return res.json(runPreScaleSimulation({
+        seed,
+        concurrentUsers,
+        requestsPerUser,
+        tiers,
+    }));
+}));
+
+/**
+ * Return recent synthetic stress/abuse simulation runs.
+ */
+app.get('/admin/pre-scale/simulations', asyncHandler(async (req, res) => {
+    const limit = Number(req.query.limit);
+    return res.json({
+        runs: getPreScaleSimulationRuns({
+            limit: Number.isFinite(limit) ? limit : undefined,
+        }),
+    });
+}));
+
+/**
+ * Persist existing in-memory economics/telemetry rows to persistent storage.
+ */
+app.post('/admin/pre-scale/migrate-inmemory', asyncHandler(async (req, res) => {
+    const usageRows = await migrateInMemoryUsageBucketsToPersistentStore();
+    const marginRows = await migrateInMemoryUsageMeteringToPersistentStore();
+    const telemetryRows = await migrateInMemoryPreScaleTelemetryToPersistentStore();
+
+    return res.json({
+        migrated: {
+            usageRows,
+            marginRows,
+            telemetryRows,
+        },
+    });
 }));
 
 /**

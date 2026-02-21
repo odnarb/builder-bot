@@ -190,5 +190,6 @@ Is this clear?
 - `2026-02-20 Implementation Pass 5`: added evaluation harness + regression tracking and abuse analytics endpoints (`apps/api/utils/evaluation-harness.js`, `apps/api/utils/abuse-analytics.js`).
 - `2026-02-20 Implementation Pass 5`: enforced refund eligibility + renewal preference policy logic and wired Terms/Privacy acceptance into signup/checkout confirmation (`apps/api/utils/billing-policy.js`, `/user/subscription/*`, `/stripe/confirm-checkout`).
 - `2026-02-20 Implementation Pass 5`: added like/upvote reward credits with anti-fraud baseline checks (`recordBuildReaction`, `/community/rewards`).
-- Caveat: monthly usage tracking is currently in-memory process state and resets on service restart; persistent storage is still TODO.
+- `2026-02-20 Pre-Scale Pass`: monthly usage/margin telemetry now supports Firestore persistence with restart-safe monthly keys (`apps/api/utils/economics-persistence.js`, `apps/api/utils/token-governor.js`, `apps/api/utils/margin-metering.js`).
+- Caveat: persistent economics writes require a working Firestore runtime (`GOOGLE_APPLICATION_CREDENTIALS` or equivalent cloud identity). Without it, the system falls back to in-memory mode.
 - Caveat: localization content is still pending translation copy and full UI string coverage; only locale config and roadmap scaffolding exist today.

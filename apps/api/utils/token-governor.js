@@ -1,4 +1,12 @@
+import {
+    buildMonthlyDocId,
+    readPersistentDoc,
+    writePersistentDoc,
+} from './economics-persistence.js';
+
 const usageBuckets = new Map();
+const hydrationPromisesByBucket = new Map();
+let migrationCompleted = false;
 
 /**
  * Check whether a tier policy allows metered overage.
@@ -15,10 +23,161 @@ function allowsMeteredOverage(tierPolicy) {
  * @param {string} userKey
  * @returns {string}
  */
-function buildUsageKey(userKey) {
-    const now = new Date();
+function normalizeUserKey(userKey) {
+    return typeof userKey === 'string' && userKey.trim().length > 0
+        ? userKey.trim()
+        : 'unknown-user';
+}
+
+/**
+ * Build a stable usage-bucket key for monthly accounting.
+ * @param {string} userKey
+ * @param {Date} [now]
+ * @returns {string}
+ */
+function buildUsageKey(userKey, now = new Date()) {
     const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-    return `${month}:${userKey}`;
+    return `${month}:${normalizeUserKey(userKey)}`;
+}
+
+/**
+ * Parse a usage bucket key into month and user key parts.
+ * @param {string} usageBucketKey
+ * @returns {{ month: string, userKey: string } | null}
+ */
+function parseUsageBucketKey(usageBucketKey) {
+    const [month, ...rest] = String(usageBucketKey || '').split(':');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || rest.length === 0) {
+        return null;
+    }
+
+    return {
+        month,
+        userKey: rest.join(':'),
+    };
+}
+
+/**
+ * Build default mutable usage bucket shape.
+ * @returns {{
+ *   requestCount: number,
+ *   inputTokens: number,
+ *   outputTokens: number,
+ *   inFlight: number,
+ *   overageRequests: number,
+ *   overageInputTokens: number,
+ *   overageOutputTokens: number,
+ * }}
+ */
+function createDefaultBucket() {
+    return {
+        requestCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        inFlight: 0,
+        overageRequests: 0,
+        overageInputTokens: 0,
+        overageOutputTokens: 0,
+    };
+}
+
+/**
+ * Read one persisted usage bucket and merge it into in-memory state.
+ * @param {{ usageBucketKey: string }} params
+ */
+async function hydrateBucketFromPersistence({ usageBucketKey }) {
+    const parsed = parseUsageBucketKey(usageBucketKey);
+    if (!parsed) {
+        return;
+    }
+
+    let persisted = null;
+    try {
+        const docId = buildMonthlyDocId({ month: parsed.month, key: parsed.userKey });
+        persisted = await readPersistentDoc({
+            collection: 'usageMonthly',
+            docId,
+        });
+    } catch {
+        return;
+    }
+
+    if (!persisted) {
+        return;
+    }
+
+    const bucket = usageBuckets.get(usageBucketKey);
+    if (!bucket) {
+        return;
+    }
+
+    bucket.requestCount = Math.max(0, Number(persisted.requestCount) || 0);
+    bucket.inputTokens = Math.max(0, Number(persisted.inputTokens) || 0);
+    bucket.outputTokens = Math.max(0, Number(persisted.outputTokens) || 0);
+    bucket.inFlight = Math.max(0, Number(persisted.inFlight) || 0);
+    bucket.overageRequests = Math.max(0, Number(persisted.overageRequests) || 0);
+    bucket.overageInputTokens = Math.max(0, Number(persisted.overageInputTokens) || 0);
+    bucket.overageOutputTokens = Math.max(0, Number(persisted.overageOutputTokens) || 0);
+}
+
+/**
+ * Persist one usage bucket row to storage.
+ * @param {{ usageBucketKey: string }} params
+ */
+async function persistBucket({ usageBucketKey }) {
+    const parsed = parseUsageBucketKey(usageBucketKey);
+    if (!parsed) {
+        return;
+    }
+
+    const bucket = usageBuckets.get(usageBucketKey);
+    if (!bucket) {
+        return;
+    }
+
+    try {
+        const docId = buildMonthlyDocId({ month: parsed.month, key: parsed.userKey });
+        await writePersistentDoc({
+            collection: 'usageMonthly',
+            docId,
+            data: {
+                month: parsed.month,
+                userKey: parsed.userKey,
+                requestCount: bucket.requestCount,
+                inputTokens: bucket.inputTokens,
+                outputTokens: bucket.outputTokens,
+                inFlight: bucket.inFlight,
+                overageRequests: bucket.overageRequests,
+                overageInputTokens: bucket.overageInputTokens,
+                overageOutputTokens: bucket.overageOutputTokens,
+                updatedAt: new Date().toISOString(),
+            },
+        });
+    } catch {
+        // no-op: keep request path healthy even when persistence is unavailable.
+    }
+}
+
+/**
+ * Migrate currently loaded in-memory buckets into persistent storage.
+ * Safe to call repeatedly; no-op when no buckets are present.
+ * @returns {Promise<number>}
+ */
+export async function migrateInMemoryUsageBucketsToPersistentStore() {
+    const keys = Array.from(usageBuckets.keys());
+    if (keys.length === 0) {
+        migrationCompleted = true;
+        return 0;
+    }
+
+    let persistedRows = 0;
+    for (const usageBucketKey of keys) {
+        await persistBucket({ usageBucketKey });
+        persistedRows += 1;
+    }
+
+    migrationCompleted = true;
+    return persistedRows;
 }
 
 /**
@@ -34,20 +193,17 @@ function buildUsageKey(userKey) {
  *   overageOutputTokens: number,
  * }}
  */
-export function getOrCreateUsageBucket(userKey) {
-    const key = buildUsageKey(userKey);
+export async function getOrCreateUsageBucket(userKey, now = new Date()) {
+    const key = buildUsageKey(userKey, now);
 
     if (!usageBuckets.has(key)) {
-        usageBuckets.set(key, {
-                requestCount: 0,
-                inputTokens: 0,
-                outputTokens: 0,
-                inFlight: 0,
-                overageRequests: 0,
-                overageInputTokens: 0,
-                overageOutputTokens: 0,
-            });
+        usageBuckets.set(key, createDefaultBucket());
     }
+
+    if (!hydrationPromisesByBucket.has(key)) {
+        hydrationPromisesByBucket.set(key, hydrateBucketFromPersistence({ usageBucketKey: key }));
+    }
+    await hydrationPromisesByBucket.get(key);
 
     return usageBuckets.get(key);
 }
@@ -68,8 +224,9 @@ export function getOrCreateUsageBucket(userKey) {
  * @returns {{ requestOverage: number, inputOverageTokens: number, outputOverageTokens: number }}
  * @throws {Error}
  */
-export function reserveUsage({ userKey, estimatedInputTokens, tierPolicy }) {
-    const bucket = getOrCreateUsageBucket(userKey);
+export async function reserveUsage({ userKey, estimatedInputTokens, tierPolicy, now = new Date() }) {
+    const bucket = await getOrCreateUsageBucket(userKey, now);
+    const usageBucketKey = buildUsageKey(userKey, now);
     const canOverage = allowsMeteredOverage(tierPolicy);
     const maxRequestsPerMonth = Number.isFinite(Number(tierPolicy.maxRequestsPerMonth))
         ? Number(tierPolicy.maxRequestsPerMonth)
@@ -104,6 +261,7 @@ export function reserveUsage({ userKey, estimatedInputTokens, tierPolicy }) {
     bucket.inFlight += 1;
     bucket.overageRequests += requestOverage;
     bucket.overageInputTokens += inputOverageTokens;
+    await persistBucket({ usageBucketKey });
 
     return {
         requestOverage,
@@ -122,8 +280,9 @@ export function reserveUsage({ userKey, estimatedInputTokens, tierPolicy }) {
  * @returns {{ requestOverage: number, inputOverageTokens: number, outputOverageTokens: number }}
  * @throws {Error}
  */
-export function finalizeUsage({ userKey, estimatedOutputTokens, tierPolicy }) {
-    const bucket = getOrCreateUsageBucket(userKey);
+export async function finalizeUsage({ userKey, estimatedOutputTokens, tierPolicy, now = new Date() }) {
+    const bucket = await getOrCreateUsageBucket(userKey, now);
+    const usageBucketKey = buildUsageKey(userKey, now);
     const canOverage = allowsMeteredOverage(tierPolicy);
     const maxOutputTokensPerMonth = Number.isFinite(Number(tierPolicy.maxOutputTokensPerMonth))
         ? Number(tierPolicy.maxOutputTokensPerMonth)
@@ -141,6 +300,7 @@ export function finalizeUsage({ userKey, estimatedOutputTokens, tierPolicy }) {
 
     bucket.outputTokens += safeEstimatedOutputTokens;
     bucket.overageOutputTokens += outputOverageTokens;
+    await persistBucket({ usageBucketKey });
 
     return {
         requestOverage: 0,
@@ -153,9 +313,11 @@ export function finalizeUsage({ userKey, estimatedOutputTokens, tierPolicy }) {
  * Release an in-flight slot when an error occurs before finalizeUsage.
  * @param {string} userKey
  */
-export function releaseInFlightSlot(userKey) {
-    const bucket = getOrCreateUsageBucket(userKey);
+export async function releaseInFlightSlot(userKey, now = new Date()) {
+    const bucket = await getOrCreateUsageBucket(userKey, now);
+    const usageBucketKey = buildUsageKey(userKey, now);
     bucket.inFlight = Math.max(0, bucket.inFlight - 1);
+    await persistBucket({ usageBucketKey });
 }
 
 /**
@@ -171,8 +333,8 @@ export function releaseInFlightSlot(userKey) {
  *   overageOutputTokens: number,
  * }}
  */
-export function getUsageSnapshot(userKey) {
-    return { ...getOrCreateUsageBucket(userKey) };
+export async function getUsageSnapshot(userKey, now = new Date()) {
+    return { ...(await getOrCreateUsageBucket(userKey, now)) };
 }
 
 /**
@@ -180,4 +342,6 @@ export function getUsageSnapshot(userKey) {
  */
 export function resetUsageBuckets() {
     usageBuckets.clear();
+    hydrationPromisesByBucket.clear();
+    migrationCompleted = false;
 }
