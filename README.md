@@ -75,6 +75,26 @@ python3 -m http.server 8080 --directory apps/website
 npm test
 ```
 
+## Architecture
+- Canonical shared domain lives in `apps/core`:
+  - contracts: `apps/core/contracts/*`
+  - db adapters: `apps/core/db/firestore/*`
+  - shared logic: `apps/core/logic/*`
+  - shared platform helpers: `apps/core/platform/*`
+- API route wiring/composition:
+  - bootstrap: `apps/api/index.js`
+  - composition root: `apps/api/app-context.js`
+  - HTTP adapters: `apps/api/routes/*`
+- Stage shared dependencies before run/deploy:
+```bash
+npm run stage:shared-core
+```
+- Boundary/architecture guardrails:
+```bash
+npm run check:architecture
+```
+- Full conventions: `docs/CORE-ARCHITECTURE.md`.
+
 ## Ops Hardening
 - Emergency guard now emits transition logs on state changes:
   - `GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`
