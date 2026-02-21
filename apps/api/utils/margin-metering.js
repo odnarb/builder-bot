@@ -1,5 +1,10 @@
 import { resolveTier, TIER_PRICES_USD } from '../config/tier-policy.js';
 import logger from './logger.js';
+import {
+    buildMonthlyDocId,
+    readPersistentDoc,
+    writePersistentDoc,
+} from './economics-persistence.js';
 
 const TIER_ORDER = Object.freeze(['free', 'starter', 'pro', 'admin']);
 const INPUT_COST_PER_MILLION_TOKENS = 0.30;
@@ -15,6 +20,8 @@ const INFRA_COST_PER_REQUEST_USD = Object.freeze({
 
 const usageMeteringTable = new Map();
 const breakEvenAlertsTable = new Map();
+const buildCostSnapshots = new Map();
+const hydrationPromisesByMonthlyTier = new Map();
 
 /**
  * Round a USD value for stable reporting.
@@ -62,7 +69,7 @@ function buildMonthlyTierKey(month, tier) {
 }
 
 /**
- * Ensure a mutable metering record exists for month+tier.
+ * Create an empty mutable monthly metering record.
  * @param {{ month: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
  * @returns {{
  *   month: string,
@@ -79,27 +86,21 @@ function buildMonthlyTierKey(month, tier) {
  *   updatedAt: string | null,
  * }}
  */
-function ensureMonthlyTierRecord({ month, tier }) {
-    const key = buildMonthlyTierKey(month, tier);
-
-    if (!usageMeteringTable.has(key)) {
-        usageMeteringTable.set(key, {
-            month,
-            tier,
-            activeUserKeys: new Set(),
-            requestCount: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            revenue: 0,
-            apiCost: 0,
-            infraCost: 0,
-            totalCost: 0,
-            grossMargin: 0,
-            updatedAt: null,
-        });
-    }
-
-    return usageMeteringTable.get(key);
+function createMonthlyTierRecord({ month, tier }) {
+    return {
+        month,
+        tier,
+        activeUserKeys: new Set(),
+        requestCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        revenue: 0,
+        apiCost: 0,
+        infraCost: 0,
+        totalCost: 0,
+        grossMargin: 0,
+        updatedAt: null,
+    };
 }
 
 /**
@@ -151,6 +152,114 @@ function toPublicMeteringRow(record) {
 }
 
 /**
+ * Hydrate one monthly tier record from persistent storage.
+ * @param {{ month: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
+ */
+async function hydrateMonthlyTierRecord({ month, tier }) {
+    const monthlyTierKey = buildMonthlyTierKey(month, tier);
+    const record = usageMeteringTable.get(monthlyTierKey);
+    if (!record) {
+        return;
+    }
+
+    try {
+        const persisted = await readPersistentDoc({
+            collection: 'marginMonthly',
+            docId: buildMonthlyDocId({ month, key: tier }),
+        });
+
+        if (!persisted) {
+            return;
+        }
+
+        record.activeUserKeys = new Set(
+            Array.isArray(persisted.activeUserKeys)
+                ? persisted.activeUserKeys.map((entry) => String(entry))
+                : [],
+        );
+        record.requestCount = Math.max(0, Number(persisted.requestCount) || 0);
+        record.inputTokens = Math.max(0, Number(persisted.inputTokens) || 0);
+        record.outputTokens = Math.max(0, Number(persisted.outputTokens) || 0);
+        record.revenue = Math.max(0, Number(persisted.revenue) || 0);
+        record.apiCost = Math.max(0, Number(persisted.apiCost) || 0);
+        record.infraCost = Math.max(0, Number(persisted.infraCost) || 0);
+        record.totalCost = Math.max(0, Number(persisted.totalCost) || 0);
+        record.grossMargin = Number(persisted.grossMargin) || 0;
+        record.updatedAt = typeof persisted.updatedAt === 'string' ? persisted.updatedAt : null;
+    } catch {
+        // no-op fallback to in-memory state.
+    }
+}
+
+/**
+ * Persist one monthly tier record to storage.
+ * @param {{ month: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
+ */
+async function persistMonthlyTierRecord({ month, tier }) {
+    const monthlyTierKey = buildMonthlyTierKey(month, tier);
+    const record = usageMeteringTable.get(monthlyTierKey);
+    if (!record) {
+        return;
+    }
+
+    try {
+        await writePersistentDoc({
+            collection: 'marginMonthly',
+            docId: buildMonthlyDocId({ month, key: tier }),
+            data: {
+                month: record.month,
+                tier: record.tier,
+                activeUserKeys: Array.from(record.activeUserKeys),
+                requestCount: record.requestCount,
+                inputTokens: record.inputTokens,
+                outputTokens: record.outputTokens,
+                revenue: roundUsd(record.revenue),
+                apiCost: roundUsd(record.apiCost),
+                infraCost: roundUsd(record.infraCost),
+                totalCost: roundUsd(record.totalCost),
+                grossMargin: roundUsd(record.grossMargin),
+                updatedAt: record.updatedAt,
+            },
+        });
+    } catch {
+        // no-op fallback to in-memory state.
+    }
+}
+
+/**
+ * Ensure a mutable metering record exists for month+tier.
+ * @param {{ month: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
+ * @returns {Promise<{
+ *   month: string,
+ *   tier: 'free' | 'starter' | 'pro' | 'admin',
+ *   activeUserKeys: Set<string>,
+ *   requestCount: number,
+ *   inputTokens: number,
+ *   outputTokens: number,
+ *   revenue: number,
+ *   apiCost: number,
+ *   infraCost: number,
+ *   totalCost: number,
+ *   grossMargin: number,
+ *   updatedAt: string | null,
+ * }>}
+ */
+async function ensureMonthlyTierRecord({ month, tier }) {
+    const monthlyTierKey = buildMonthlyTierKey(month, tier);
+
+    if (!usageMeteringTable.has(monthlyTierKey)) {
+        usageMeteringTable.set(monthlyTierKey, createMonthlyTierRecord({ month, tier }));
+    }
+
+    if (!hydrationPromisesByMonthlyTier.has(monthlyTierKey)) {
+        hydrationPromisesByMonthlyTier.set(monthlyTierKey, hydrateMonthlyTierRecord({ month, tier }));
+    }
+    await hydrationPromisesByMonthlyTier.get(monthlyTierKey);
+
+    return usageMeteringTable.get(monthlyTierKey);
+}
+
+/**
  * Return the canonical UTC month key for "now".
  * @param {Date} [now]
  * @returns {string}
@@ -169,7 +278,7 @@ export function getCurrentMonthKey(now = new Date()) {
  *   month?: string,
  *   now?: Date,
  * }} params
- * @returns {{
+ * @returns {Promise<{
  *   month: string,
  *   tier: 'free' | 'starter' | 'pro' | 'admin',
  *   activeUsers: number,
@@ -182,9 +291,9 @@ export function getCurrentMonthKey(now = new Date()) {
  *   totalCost: number,
  *   grossMargin: number,
  *   updatedAt: string | null,
- * }}
+ * }>} 
  */
-export function recordUsageMetering({
+export async function recordUsageMetering({
     userKey,
     tier,
     inputTokens,
@@ -206,7 +315,7 @@ export function recordUsageMetering({
     ) / 1_000_000;
 
     const infraCost = INFRA_COST_PER_REQUEST_USD[resolvedTier] || 0;
-    const record = ensureMonthlyTierRecord({ month: monthKey, tier: resolvedTier });
+    const record = await ensureMonthlyTierRecord({ month: monthKey, tier: resolvedTier });
 
     if (!record.activeUserKeys.has(safeUserKey)) {
         record.activeUserKeys.add(safeUserKey);
@@ -222,13 +331,151 @@ export function recordUsageMetering({
     record.grossMargin = record.revenue - record.totalCost;
     record.updatedAt = new Date(now).toISOString();
 
+    await persistMonthlyTierRecord({ month: monthKey, tier: resolvedTier });
     return toPublicMeteringRow(record);
+}
+
+/**
+ * Record per-build economics details, including planner/executor token split.
+ * @param {{
+ *   buildId: string,
+ *   userKey: string,
+ *   tier: string,
+ *   inputTokens: number,
+ *   outputTokens: number,
+ *   plannerInputTokens?: number,
+ *   plannerOutputTokens?: number,
+ *   executorInputTokens?: number,
+ *   executorOutputTokens?: number,
+ *   apiCostUsd?: number,
+ *   infraCostUsd?: number,
+ *   overageCostUsd?: number,
+ *   month?: string,
+ *   now?: Date,
+ * }} params
+ * @returns {Promise<{
+ *   buildId: string,
+ *   month: string,
+ *   userKey: string,
+ *   tier: 'free' | 'starter' | 'pro' | 'admin',
+ *   inputTokens: number,
+ *   outputTokens: number,
+ *   plannerInputTokens: number,
+ *   plannerOutputTokens: number,
+ *   executorInputTokens: number,
+ *   executorOutputTokens: number,
+ *   apiCostUsd: number,
+ *   infraCostUsd: number,
+ *   overageCostUsd: number,
+ *   totalCostUsd: number,
+ *   createdAt: string,
+ * }>} 
+ */
+export async function recordBuildCostSnapshot({
+    buildId,
+    userKey,
+    tier,
+    inputTokens,
+    outputTokens,
+    plannerInputTokens = 0,
+    plannerOutputTokens = 0,
+    executorInputTokens = 0,
+    executorOutputTokens = 0,
+    apiCostUsd,
+    infraCostUsd,
+    overageCostUsd = 0,
+    month,
+    now = new Date(),
+}) {
+    const safeBuildId = String(buildId || '').trim() || `build_${Date.now()}`;
+    const resolvedTier = resolveTier(tier);
+    const monthKey = normalizeMonthKey(month, now);
+    const safeInputTokens = Math.max(0, Number(inputTokens) || 0);
+    const safeOutputTokens = Math.max(0, Number(outputTokens) || 0);
+    const safePlannerInput = Math.max(0, Number(plannerInputTokens) || 0);
+    const safePlannerOutput = Math.max(0, Number(plannerOutputTokens) || 0);
+    const safeExecutorInput = Math.max(0, Number(executorInputTokens) || 0);
+    const safeExecutorOutput = Math.max(0, Number(executorOutputTokens) || 0);
+
+    const resolvedApiCostUsd = Number.isFinite(Number(apiCostUsd))
+        ? Math.max(0, Number(apiCostUsd))
+        : ((safeInputTokens * INPUT_COST_PER_MILLION_TOKENS) + (safeOutputTokens * OUTPUT_COST_PER_MILLION_TOKENS)) / 1_000_000;
+    const resolvedInfraCostUsd = Number.isFinite(Number(infraCostUsd))
+        ? Math.max(0, Number(infraCostUsd))
+        : (INFRA_COST_PER_REQUEST_USD[resolvedTier] || 0);
+    const resolvedOverageCostUsd = Math.max(0, Number(overageCostUsd) || 0);
+    const createdAt = new Date(now).toISOString();
+
+    const snapshot = {
+        buildId: safeBuildId,
+        month: monthKey,
+        userKey: typeof userKey === 'string' && userKey.trim().length > 0 ? userKey.trim() : `unknown:${resolvedTier}`,
+        tier: resolvedTier,
+        inputTokens: safeInputTokens,
+        outputTokens: safeOutputTokens,
+        plannerInputTokens: safePlannerInput,
+        plannerOutputTokens: safePlannerOutput,
+        executorInputTokens: safeExecutorInput,
+        executorOutputTokens: safeExecutorOutput,
+        apiCostUsd: roundUsd(resolvedApiCostUsd),
+        infraCostUsd: roundUsd(resolvedInfraCostUsd),
+        overageCostUsd: roundUsd(resolvedOverageCostUsd),
+        totalCostUsd: roundUsd(resolvedApiCostUsd + resolvedInfraCostUsd + resolvedOverageCostUsd),
+        createdAt,
+    };
+
+    buildCostSnapshots.set(safeBuildId, snapshot);
+
+    try {
+        await writePersistentDoc({
+            collection: 'buildEconomics',
+            docId: buildMonthlyDocId({ month: monthKey, key: `${resolvedTier}:${safeBuildId}` }),
+            data: snapshot,
+        });
+    } catch {
+        // no-op fallback to in-memory state.
+    }
+
+    return snapshot;
+}
+
+/**
+ * Return tracked per-build economics rows.
+ * @param {{ month?: string, tier?: string, limit?: number }} [params]
+ * @returns {Array<{
+ *   buildId: string,
+ *   month: string,
+ *   userKey: string,
+ *   tier: 'free' | 'starter' | 'pro' | 'admin',
+ *   inputTokens: number,
+ *   outputTokens: number,
+ *   plannerInputTokens: number,
+ *   plannerOutputTokens: number,
+ *   executorInputTokens: number,
+ *   executorOutputTokens: number,
+ *   apiCostUsd: number,
+ *   infraCostUsd: number,
+ *   overageCostUsd: number,
+ *   totalCostUsd: number,
+ *   createdAt: string,
+ * }>}
+ */
+export function getBuildCostSnapshots(params = {}) {
+    const month = normalizeMonthKey(params.month, params.now || new Date());
+    const tier = typeof params.tier === 'string' ? resolveTier(params.tier) : null;
+    const limit = Math.max(1, Math.min(500, Number(params.limit) || 50));
+
+    return Array.from(buildCostSnapshots.values())
+        .filter((snapshot) => snapshot.month === month)
+        .filter((snapshot) => (tier ? snapshot.tier === tier : true))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, limit);
 }
 
 /**
  * Fetch monthly usage metering rows for all tiers.
  * @param {{ month?: string, now?: Date }} [params]
- * @returns {Array<{
+ * @returns {Promise<Array<{
  *   month: string,
  *   tier: 'free' | 'starter' | 'pro' | 'admin',
  *   activeUsers: number,
@@ -241,21 +488,24 @@ export function recordUsageMetering({
  *   totalCost: number,
  *   grossMargin: number,
  *   updatedAt: string | null,
- * }>}
+ * }>>}
  */
-export function getUsageMeteringRows(params = {}) {
+export async function getUsageMeteringRows(params = {}) {
     const monthKey = normalizeMonthKey(params.month, params.now);
+    const rows = [];
 
-    return TIER_ORDER.map((tier) => {
-        const record = ensureMonthlyTierRecord({ month: monthKey, tier });
-        return toPublicMeteringRow(record);
-    });
+    for (const tier of TIER_ORDER) {
+        const record = await ensureMonthlyTierRecord({ month: monthKey, tier });
+        rows.push(toPublicMeteringRow(record));
+    }
+
+    return rows;
 }
 
 /**
  * Build a monthly margin report grouped by tier.
  * @param {{ month?: string, thresholdPercent?: number, now?: Date }} [params]
- * @returns {{
+ * @returns {Promise<{
  *   month: string,
  *   generatedAt: string,
  *   thresholdPercent: number,
@@ -277,31 +527,31 @@ export function getUsageMeteringRows(params = {}) {
  *     updatedAt: string | null,
  *   }>,
  *   totals: { revenue: number, totalCost: number, rawProfit: number, marginPercent: number | null },
- * }}
+ * }>} 
  */
-export function getMonthlyMarginReport(params = {}) {
+export async function getMonthlyMarginReport(params = {}) {
     const monthKey = normalizeMonthKey(params.month, params.now);
     const thresholdPercent = Number.isFinite(Number(params.thresholdPercent))
         ? Number(params.thresholdPercent)
         : DEFAULT_BREAK_EVEN_THRESHOLD_PERCENT;
 
-    const tiers = getUsageMeteringRows({ month: monthKey, now: params.now })
-        .map((row) => {
-            const rawProfit = row.revenue - row.totalCost;
-            const marginPercent = row.revenue > 0
-                ? roundPercent((rawProfit / row.revenue) * 100)
-                : null;
+    const rows = await getUsageMeteringRows({ month: monthKey, now: params.now });
+    const tiers = rows.map((row) => {
+        const rawProfit = row.revenue - row.totalCost;
+        const marginPercent = row.revenue > 0
+            ? roundPercent((rawProfit / row.revenue) * 100)
+            : null;
 
-            return {
-                ...row,
-                rawProfit: roundUsd(rawProfit),
-                marginPercent,
-                belowMarginThreshold: row.tier !== 'free' &&
-                    row.revenue > 0 &&
-                    typeof marginPercent === 'number' &&
-                    marginPercent < thresholdPercent,
-            };
-        });
+        return {
+            ...row,
+            rawProfit: roundUsd(rawProfit),
+            marginPercent,
+            belowMarginThreshold: row.tier !== 'free' &&
+                row.revenue > 0 &&
+                typeof marginPercent === 'number' &&
+                marginPercent < thresholdPercent,
+        };
+    });
 
     const totalRevenue = tiers.reduce((sum, row) => sum + row.revenue, 0);
     const totalCost = tiers.reduce((sum, row) => sum + row.totalCost, 0);
@@ -326,16 +576,16 @@ export function getMonthlyMarginReport(params = {}) {
 /**
  * Evaluate break-even alerts and emit log warnings on threshold breaches.
  * @param {{ month?: string, thresholdPercent?: number, now?: Date }} [params]
- * @returns {{
+ * @returns {Promise<{
  *   month: string,
  *   thresholdPercent: number,
  *   triggered: Array<Record<string, unknown>>,
  *   resolved: Array<Record<string, unknown>>,
  *   active: Array<Record<string, unknown>>,
- * }}
+ * }>} 
  */
-export function evaluateBreakEvenAlerts(params = {}) {
-    const report = getMonthlyMarginReport(params);
+export async function evaluateBreakEvenAlerts(params = {}) {
+    const report = await getMonthlyMarginReport(params);
     const triggered = [];
     const resolved = [];
 
@@ -439,9 +689,33 @@ export function getBreakEvenAlerts(params = {}) {
 }
 
 /**
+ * Persist currently loaded metering rows to persistent storage.
+ * @returns {Promise<number>}
+ */
+export async function migrateInMemoryUsageMeteringToPersistentStore() {
+    let persistedRows = 0;
+    for (const key of usageMeteringTable.keys()) {
+        const [month, tier] = key.split(':');
+        if (!month || !tier) {
+            continue;
+        }
+
+        await persistMonthlyTierRecord({
+            month,
+            tier: resolveTier(tier),
+        });
+        persistedRows += 1;
+    }
+
+    return persistedRows;
+}
+
+/**
  * Reset metering and alert state for tests.
  */
 export function resetUsageMeteringState() {
     usageMeteringTable.clear();
     breakEvenAlertsTable.clear();
+    buildCostSnapshots.clear();
+    hydrationPromisesByMonthlyTier.clear();
 }

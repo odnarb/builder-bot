@@ -54,6 +54,11 @@ npm test
   - `blocksAndTags` (legacy compatibility)
   - optional `schematic` artifact when `includeSchematic: true`
 - `GET /api/admin/ops-dashboard`, `GET /api/admin/ops-alerts`
+- `GET /api/admin/pre-scale-telemetry`, `GET /api/admin/performance-profile`
+- `GET /api/admin/build-costs`
+- `POST /api/admin/pre-scale/simulate`, `GET /api/admin/pre-scale/simulations`
+- `GET /api/admin/conversion-funnel`
+- `POST /api/admin/pre-scale/migrate-inmemory`
 - `GET /api/admin/incidents`, `POST /api/admin/incidents/:incidentId/resolve`
 - `POST /api/admin/evaluation/run`, `GET /api/admin/evaluation`
 - `GET /api/admin/abuse-analytics`, `GET /api/admin/overage-report`

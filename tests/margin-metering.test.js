@@ -9,10 +9,10 @@ import {
     resetUsageMeteringState,
 } from '../apps/api/utils/margin-metering.js';
 
-test('recordUsageMetering tracks tokens, costs, and gross margin fields', () => {
+test('recordUsageMetering tracks tokens, costs, and gross margin fields', async () => {
     resetUsageMeteringState();
 
-    const row = recordUsageMetering({
+    const row = await recordUsageMetering({
         userKey: 'auth:user-a',
         tier: 'starter',
         inputTokens: 1000,
@@ -32,10 +32,10 @@ test('recordUsageMetering tracks tokens, costs, and gross margin fields', () => 
     assert.equal(row.grossMargin, 4.9891);
 });
 
-test('getMonthlyMarginReport returns revenue/cost/profit/margin by tier', () => {
+test('getMonthlyMarginReport returns revenue/cost/profit/margin by tier', async () => {
     resetUsageMeteringState();
 
-    recordUsageMetering({
+    await recordUsageMetering({
         userKey: 'auth:user-starter',
         tier: 'starter',
         inputTokens: 0,
@@ -43,7 +43,7 @@ test('getMonthlyMarginReport returns revenue/cost/profit/margin by tier', () => 
         month: '2026-02',
     });
 
-    recordUsageMetering({
+    await recordUsageMetering({
         userKey: 'auth:user-pro',
         tier: 'pro',
         inputTokens: 2000,
@@ -51,7 +51,7 @@ test('getMonthlyMarginReport returns revenue/cost/profit/margin by tier', () => 
         month: '2026-02',
     });
 
-    const report = getMonthlyMarginReport({ month: '2026-02' });
+    const report = await getMonthlyMarginReport({ month: '2026-02' });
     const starter = report.tiers.find((tierRow) => tierRow.tier === 'starter');
     const pro = report.tiers.find((tierRow) => tierRow.tier === 'pro');
 
@@ -65,10 +65,10 @@ test('getMonthlyMarginReport returns revenue/cost/profit/margin by tier', () => 
     assert.equal(pro.requestCount, 1);
 });
 
-test('evaluateBreakEvenAlerts triggers and resolves threshold alerts', () => {
+test('evaluateBreakEvenAlerts triggers and resolves threshold alerts', async () => {
     resetUsageMeteringState();
 
-    recordUsageMetering({
+    await recordUsageMetering({
         userKey: 'auth:user-pro-expensive',
         tier: 'pro',
         inputTokens: 25000000,
@@ -76,19 +76,19 @@ test('evaluateBreakEvenAlerts triggers and resolves threshold alerts', () => {
         month: '2026-02',
     });
 
-    const firstCheck = evaluateBreakEvenAlerts({ month: '2026-02', thresholdPercent: 35 });
+    const firstCheck = await evaluateBreakEvenAlerts({ month: '2026-02', thresholdPercent: 35 });
     assert.equal(firstCheck.triggered.length, 1);
     assert.equal(firstCheck.triggered[0].tier, 'pro');
     assert.equal(firstCheck.active.length, 1);
 
-    recordUsageMetering({
+    await recordUsageMetering({
         userKey: 'auth:user-pro-b',
         tier: 'pro',
         inputTokens: 0,
         outputTokens: 0,
         month: '2026-02',
     });
-    recordUsageMetering({
+    await recordUsageMetering({
         userKey: 'auth:user-pro-c',
         tier: 'pro',
         inputTokens: 0,
@@ -96,11 +96,11 @@ test('evaluateBreakEvenAlerts triggers and resolves threshold alerts', () => {
         month: '2026-02',
     });
 
-    const secondCheck = evaluateBreakEvenAlerts({ month: '2026-02', thresholdPercent: 35 });
+    const secondCheck = await evaluateBreakEvenAlerts({ month: '2026-02', thresholdPercent: 35 });
     assert.equal(secondCheck.resolved.length, 1);
     assert.equal(secondCheck.active.length, 0);
 
-    const rows = getUsageMeteringRows({ month: '2026-02' });
+    const rows = await getUsageMeteringRows({ month: '2026-02' });
     const pro = rows.find((row) => row.tier === 'pro');
     assert.equal(pro.activeUsers, 3);
 });
