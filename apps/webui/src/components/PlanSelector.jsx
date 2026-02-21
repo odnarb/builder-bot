@@ -91,7 +91,7 @@ export default function PlanSelector({ onSelect }) {
 
             <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { name: 'Lite', tier: 'starter', price: '$4.99/mo', desc: '500-block builds + templates' },
+                    { name: 'Starter', tier: 'starter', price: '$4.99/mo', desc: '500-block builds + templates' },
                     { name: 'Pro', tier: 'pro', price: '$12.99/mo', desc: '2,000-block builds + AI chat', highlight: true },
                     { name: 'Admin', tier: 'admin', price: '$24.99/mo', desc: 'Unlimited builds, full access' },
                     { name: 'Free', tier: 'free', price: '$0', desc: 'Limited to 50-block builds' },

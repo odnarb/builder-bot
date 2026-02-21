@@ -123,7 +123,7 @@ Is this clear?
 - [x] Gate chat/build features by tier. (`TIER_FEATURE_POLICY` + `/user/features` + `/ai-get-structure` gating)
 - [x] Add command-block permissions by tier (Pro/Admin) with auditing trail. (validator + `/admin/security-audits`)
 - [x] Complete build history productization (user-facing history UI + retrieval API). (`GET /user/builds`, `GET /user/build/:buildId`, `apps/webui/src/components/BuildHistoryPanel.jsx`)
-- [ ] Add SKU expansion from roadmap docs: Lite, Annual Pro, Server License, Mega Build Pass. (deferred; currently limited to Starter/Pro/Admin monthly SKUs)
+- [x] Keep canonical monthly SKU catalog only (Starter/Pro/Admin monthly SKUs).
 - [x] Implement referral bonus rules and entitlement updates. (`/community/referral/*`, `/user/entitlements`, `apps/api/utils/referrals.js`)
 - [x] Implement overage billing paths for paid tiers (Starter/Pro/Admin) from policy table. (`apps/api/utils/token-governor.js`, `apps/api/utils/overage-billing.js`, `/user/overage`, `/admin/overage-report`)
 

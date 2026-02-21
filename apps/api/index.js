@@ -1151,13 +1151,9 @@ app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, r
 
     // Map SKU → Stripe product id
     const productMap = {
-        lite_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         starter_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         pro_monthly: process.env.STRIPE_PRODUCT_ID_PRO_TIER,
-        pro_annual: process.env.STRIPE_PRODUCT_ID_PRO_ANNUAL,
         admin_monthly: process.env.STRIPE_PRODUCT_ID_ADMIN_TIER,
-        server_license_monthly: process.env.STRIPE_PRODUCT_ID_SERVER_LICENSE,
-        mega_build_pass: process.env.STRIPE_PRODUCT_ID_MEGA_BUILD_PASS,
     };
 
     const { username, tier, skuCode, termsVersion, privacyVersion } = req.body || {};
