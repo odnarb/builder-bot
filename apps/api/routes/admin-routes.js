@@ -26,6 +26,7 @@ export function registerAdminRoutes(app, deps) {
         EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE,
         evaluateOpsAlerts,
         getEmergencyGuardAlertValue,
+        isPersistentEconomicsEnabled,
         evaluateIncidentNotifications,
         getSecurityAuditEvents,
         getAttributionEvents,
@@ -271,6 +272,8 @@ export function registerAdminRoutes(app, deps) {
     app.get('/admin/ops-alerts', asyncHandler(async (req, res) => {
         const evaluation = evaluateOpsAlerts();
         const emergencyGuard = await evaluateCurrentEmergencyMarginGuard();
+        const configuredPersistenceMode = String(process.env.PRE_SCALE_PERSISTENCE_MODE || '').trim().toLowerCase();
+        const persistentEconomicsEnabled = await isPersistentEconomicsEnabled().catch(() => false);
         const alerts = [...evaluation.alerts];
 
         if (emergencyGuard.state.active) {
@@ -279,6 +282,18 @@ export function registerAdminRoutes(app, deps) {
                 code: 'emergency_margin_guard_active',
                 message: emergencyGuard.state.reason || 'Emergency margin guard is active.',
                 value: getEmergencyGuardAlertValue(emergencyGuard.state),
+            });
+        }
+
+        if (configuredPersistenceMode === 'firestore' && !persistentEconomicsEnabled) {
+            alerts.push({
+                level: 'warning',
+                code: 'persistence_fallback_active',
+                message: 'PRE_SCALE_PERSISTENCE_MODE=firestore but persistent economics is unavailable; runtime is using in-memory fallback.',
+                value: {
+                    configuredMode: configuredPersistenceMode,
+                    persistentEconomicsEnabled,
+                },
             });
         }
 

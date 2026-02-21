@@ -48,6 +48,8 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `apps/api/middleware/require-admin-access.js:109`
 - [x] Updated web UI WS client to send Auth token during WS connect.
   - `apps/webui/src/components/WebSocketProvider.jsx:35`
+- [x] Added production runtime warning when WS origin allowlist is not explicitly configured.
+  - `apps/bot/ws-server.js:124`
 - [x] Added/updated security regression tests.
   - `tests/ai-routes-security.test.js`
   - `tests/user-routes-security.test.js`
@@ -62,6 +64,15 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `apps/webui/package.json`
   - `apps/webui/package-lock.json`
   - `package-lock.json` (root transitive `jws` update)
+- [x] Added CI security gates for dependency audit, secret scanning, and protected-route lint checks.
+  - `.github/workflows/security-gates.yml`
+  - `scripts/security-audit-gate.mjs`
+  - `scripts/scan-secrets.mjs`
+  - `scripts/check-protected-routes.mjs`
+  - `package.json` (`check:security*` scripts)
+- [x] Added operations alert when persistence is configured for Firestore but runtime falls back to in-memory mode.
+  - `apps/api/routes/admin-routes.js:276`
+  - `apps/api/context/static-route-deps.js:230`
 
 ## Validation
 - Full test suite passes after the changes:
@@ -77,6 +88,8 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `npm --prefix apps/functions/stripe-api audit --omit=dev --json` => `0` vulnerabilities.
   - `npm --prefix apps/webui audit --omit=dev --json` => `0` vulnerabilities.
   - `npm audit --omit=dev --json` (root) => `6` vulnerabilities (`high:5`, `moderate:1`), all in the `mineflayer` transitive chain.
+- Security gate command validates current CI checks:
+  - `npm run check:security` => pass
 
 ## Findings and Current Status
 
@@ -124,6 +137,7 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - loopback bind `127.0.0.1`.
   - token-auth check at WS connect.
   - explicit origin allowlist validation (`BOT_WS_ALLOWED_ORIGINS`, defaults to local UI origins).
+  - production runtime warning when `BOT_WS_ALLOWED_ORIGINS` is not explicitly set.
   - UI now passes token.
   - see `apps/bot/ws-server.js:122`, `apps/bot/ws-server.js:126`, `apps/webui/src/components/WebSocketProvider.jsx:35`.
 
@@ -181,15 +195,15 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
    - `npm audit --omit=dev --audit-level=high`
    - secret scanning
    - lint rule for protected route registration
-   - **Open**
+   - **Done** (`.github/workflows/security-gates.yml`, `npm run check:security`)
 
 ## Remaining Actions
 1. Resolve remaining root dependency findings in the mineflayer transitive chain with compatibility-tested upgrade/override strategy.
-2. Complete CI security gating rollout (`npm audit --omit=dev --audit-level=high`, secret scanning, protected-route lint checks).
-3. Verify production runtime config includes explicit `BOT_WS_ALLOWED_ORIGINS` values per environment.
-4. Validate persistent idempotency path in staging/prod (`PRE_SCALE_PERSISTENCE_MODE=firestore`) and add operational alerting for persistence fallback.
+2. Reduce and eventually remove temporary root audit allowlist exceptions in `scripts/security-audit-gate.mjs` as mineflayer-chain remediation lands.
+3. Roll out explicit `BOT_WS_ALLOWED_ORIGINS` values across production/staging environments (runtime warning now detects missing config).
+4. Validate persistent idempotency path in staging/prod (`PRE_SCALE_PERSISTENCE_MODE=firestore`) and tune alert handling for `persistence_fallback_active`.
 
 ## Ownership Suggestions
 - Backend/API team: monitor durable Stripe idempotency + denied-auth telemetry in production.
 - Bot platform team: keep WS origin allowlist aligned with deployment surfaces and add WS rejection telemetry.
-- Infra/DevEx: root mineflayer-chain dependency remediation strategy + CI security gates.
+- Infra/DevEx: root mineflayer-chain dependency remediation strategy + CI audit allowlist reduction plan.

@@ -119,7 +119,11 @@ export function isAuthorizedWsClient({ request, expectedAuthToken }) {
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
   const expectedWsAuthToken = String(process.env.AUTH_TOKEN || '').trim();
-  const allowedWsOrigins = parseAllowedWsOrigins(process.env.BOT_WS_ALLOWED_ORIGINS);
+  const rawAllowedWsOrigins = String(process.env.BOT_WS_ALLOWED_ORIGINS || '').trim();
+  if (process.env.NODE_ENV === 'production' && rawAllowedWsOrigins.length === 0) {
+    console.warn('⚠️ BOT_WS_ALLOWED_ORIGINS is not explicitly set in production; using default local origin allowlist.');
+  }
+  const allowedWsOrigins = parseAllowedWsOrigins(rawAllowedWsOrigins);
   const wss = new WebSocketServer({ host: '127.0.0.1', port: 3002 });
 
   wss.on('connection', (ws, request) => {

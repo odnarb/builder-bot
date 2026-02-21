@@ -144,6 +144,7 @@ import {
     getAbuseAnalytics,
     recordAbuseSignal,
 } from '../core/logic/abuse-analytics.js';
+import { isPersistentEconomicsEnabled } from '../utils/economics-persistence.js';
 import {
     evaluateRefundEligibility,
     getRenewalPreference,
@@ -226,6 +227,7 @@ export const staticRouteDeps = {
     recordCrash,
     recordInstallation,
     recordTokenBurn,
+    isPersistentEconomicsEnabled,
 
     // guard + security + policy
     evaluateEmergencyMarginGuard,
