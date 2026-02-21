@@ -13,32 +13,46 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
 - [x] Architecture boundary checker added:
   - `scripts/check-architecture-boundaries.mjs`
   - currently passing clean (`[check-architecture-boundaries] OK`) with Firestore allowlist aligned to shared db adapters.
-- [~] Phase 2 logic extraction started:
+- [x] Phase 2 logic extraction completed:
   - `/ai-get-structure` orchestration moved into `apps/core/logic/ai-get-structure.js`.
   - `apps/api/routes/ai-routes.js` reduced from `707` lines to `42` lines as HTTP adapter only.
-- [~] Phase 2 logic extraction continued:
   - moved AI runtime helper functions to `apps/core/logic/ai-runtime-helpers.js`.
   - moved emergency guard orchestration cache/evaluator to `apps/core/logic/emergency-guard-runtime.js`.
   - moved admin access auth/cache middleware to `apps/api/middleware/require-admin-access.js`.
   - `apps/api/index.js` reduced further from `833` lines to `451` lines.
-- [~] API bootstrap/context split completed:
+- [x] API bootstrap/context split completed:
   - moved route dependency assembly into `apps/api/app-context.js`.
   - reduced `apps/api/index.js` from `451` lines to `78` lines (bootstrap + route mounting + error handlers only).
-- [~] App context modularization completed:
+- [x] App context modularization completed:
   - split `apps/api/app-context.js` into:
     - `apps/api/context/static-route-deps.js`
     - `apps/api/context/runtime-route-deps.js`
   - reduced `apps/api/app-context.js` from `400` lines to `34` lines (composition only).
-- [~] Phase 3 db-layer consolidation started:
+- [x] Phase 3 db-layer consolidation completed:
   - moved economics persistence implementation to canonical shared db path:
     - `apps/core/db/firestore/economics-persistence.js`
   - converted `apps/api/utils/economics-persistence.js` into a thin compatibility re-export adapter.
+  - moved remaining non-HTTP business modules into canonical core paths:
+    - `apps/core/logic/*` (metering, governors, telemetry, abuse/security/incident/eval, billing/referrals/platform, etc.)
+    - `apps/core/contracts/*` (tier + SKU policy)
+    - `apps/core/platform/logger.js`
+  - converted `apps/api/utils/*` and `apps/api/config/*` to compatibility re-export adapters.
   - updated architecture boundary allowlist to point at shared db adapter path.
-- [~] Phase 4 deploy-root import cutover started:
+- [x] Phase 4 deploy-root import cutover completed:
   - switched API imports to staged in-app paths (`apps/api/core`, `apps/api/shared-utils`, `apps/api/packages/prompt-parser`).
   - `scripts/stage-shared-core.mjs` now stages shared-utils and prompt-parser by default (use `--core-only` to skip).
   - `scripts/check-architecture-boundaries.mjs` now enforces deploy-root boundaries by resolving relative imports (API + stripe function) and is currently clean.
-- [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 3-5) and staged-path cleanup of compatibility adapters.
+- [x] Phase 5 cleanup and hardening completed:
+  - normalized app-layer logging to shared logger usage (routes + bootstrap/server).
+  - added integration wiring coverage for composition root (`tests/api-app-context-wiring.test.js`).
+  - documented conventions in `docs/CORE-ARCHITECTURE.md` and updated `README.md`.
+- [x] Remaining: no open items in this reorg plan.
+
+## Final Verification Snapshot (2026-02-21)
+- `npm run stage:shared-core`: pass.
+- `npm run check:architecture`: pass (`[check-architecture-boundaries] OK`).
+- `npm run test:api-smoke`: pass (5/5).
+- `npm test`: pass (85/85).
 
 ## Why This Plan Exists
 Your stated goal matches the architecture guidance in `docs/AGENTS.md:237`-`docs/AGENTS.md:249`:

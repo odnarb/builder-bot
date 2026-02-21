@@ -21,30 +21,30 @@ import {
     getTierModelRoute,
     isInCanaryRollout,
     resolveTier,
-} from '../config/tier-policy.js';
+} from '../core/contracts/tier-policy.js';
 import {
     getSkuCatalog,
     resolveCheckoutSku,
-} from '../config/sku-catalog.js';
+} from '../core/contracts/sku-catalog.js';
 import {
     buildContextSnapshot,
     estimateAiInputTokens,
     estimateTokenCountFromText,
     prepareContextForSnapshot,
-} from '../utils/ai-context.js';
+} from '../core/logic/ai-context.js';
 import {
     finalizeUsage,
     getUsageSnapshot,
     migrateInMemoryUsageBucketsToPersistentStore,
     releaseInFlightSlot,
     reserveUsage,
-} from '../utils/token-governor.js';
+} from '../core/logic/token-governor.js';
 import {
     getBuildUsageSnapshot,
     recordBuildFailure,
     reserveBuildQuota,
-} from '../utils/build-governor.js';
-import { validateInstructionPlan } from '../utils/build-validator.js';
+} from '../core/logic/build-governor.js';
+import { validateInstructionPlan } from '../core/logic/build-validator.js';
 import {
     evaluateBreakEvenAlerts,
     getBuildCostSnapshots,
@@ -54,7 +54,7 @@ import {
     migrateInMemoryUsageMeteringToPersistentStore,
     recordBuildCostSnapshot,
     recordUsageMetering,
-} from '../utils/margin-metering.js';
+} from '../core/logic/margin-metering.js';
 import {
     getPreScalePerformanceProfile,
     getPreScaleTelemetryDashboard,
@@ -62,22 +62,22 @@ import {
     recordPreScaleBuildSuccess,
     recordPreScaleRequestFailure,
     recordPreScaleRequestStart,
-} from '../utils/pre-scale-telemetry.js';
+} from '../core/logic/pre-scale-telemetry.js';
 import {
     getPreScaleSimulationRuns,
     runPreScaleSimulation,
-} from '../utils/pre-scale-simulation.js';
+} from '../core/logic/pre-scale-simulation.js';
 import {
     getConversionFunnelReport,
     recordCheckoutStarted,
     recordFeatureUsageSignal,
     recordSignupLifecycle,
     recordTierUpgrade,
-} from '../utils/conversion-funnel.js';
+} from '../core/logic/conversion-funnel.js';
 import {
     getSecurityAuditEvents,
     recordSecurityAuditEvent,
-} from '../utils/security-audit.js';
+} from '../core/logic/security-audit.js';
 import {
     evaluateOpsAlerts,
     getOpsDashboardSnapshot,
@@ -89,14 +89,14 @@ import {
     recordTokenBurn,
     setActiveSessions,
     setQueueDepth,
-} from '../utils/ops-metrics.js';
+} from '../core/logic/ops-metrics.js';
 import {
     evaluateEmergencyMarginGuard,
     getEmergencyMarginGuardState,
     setEmergencyMarginGuardManualOverride,
     shouldForceThinSnapshots,
     shouldThrottleFreeTier,
-} from '../utils/emergency-margin-guard.js';
+} from '../core/logic/emergency-margin-guard.js';
 import {
     acceptPolicyDocuments,
     createMarketplaceListing,
@@ -114,41 +114,41 @@ import {
     recordBuildReaction,
     savePhrasePack,
     setParentalControls,
-} from '../utils/platform-features.js';
+} from '../core/logic/platform-features.js';
 import {
     createReferralCode,
     getReferralEvents,
     getReferralSummary,
     getUserEntitlements,
     redeemReferralCode,
-} from '../utils/referrals.js';
+} from '../core/logic/referrals.js';
 import {
     getOverageRateUsdPer1k,
     getOverageReport,
     getUserOverageSnapshot,
     recordOverageUsage,
     supportsMeteredOverage,
-} from '../utils/overage-billing.js';
+} from '../core/logic/overage-billing.js';
 import {
     evaluateIncidentNotifications,
     getIncidentPlaybooks,
     getIncidents,
     resolveIncident,
-} from '../utils/incident-manager.js';
+} from '../core/logic/incident-manager.js';
 import {
     getEvaluationReport,
     recordEvaluationRun,
-} from '../utils/evaluation-harness.js';
+} from '../core/logic/evaluation-harness.js';
 import {
     getAbuseAnalytics,
     recordAbuseSignal,
-} from '../utils/abuse-analytics.js';
+} from '../core/logic/abuse-analytics.js';
 import {
     evaluateRefundEligibility,
     getRenewalPreference,
     setRenewalPreference,
-} from '../utils/billing-policy.js';
-import logger from '../utils/logger.js';
+} from '../core/logic/billing-policy.js';
+import logger from '../core/platform/logger.js';
 import { toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { exportInstructionPlanToSchematic } from '../shared-utils/schematic-export.js';
 

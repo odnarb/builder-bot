@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-concurrency=1",
-    "test:api-smoke": "node --test tests/api-routes-smoke.test.js",
+    "test": "npm run stage:shared-core && node --test --test-concurrency=1",
+    "test:api-smoke": "npm run stage:shared-core && node --test tests/api-routes-smoke.test.js",
     "check:architecture": "node scripts/check-architecture-boundaries.mjs",
     "stage:shared-core": "node scripts/stage-shared-core.mjs",
     "dev": "node apps/cli/index.js",

@@ -20,6 +20,7 @@ const {
     requireAdminAccess,
     asyncHandler,
 } = createAppContext();
+const { logger } = routeDeps;
 
 // rewrite urls from /api to /
 if (process.env.NODE_ENV !== 'production') {
@@ -71,7 +72,12 @@ app.use((err, req, res, next) => {
         });
     }
 
-    console.error('💥 Uncaught error:', err.stack || err);
+    logger.error('Unhandled API error', {
+        status: status || 500,
+        method: req.method,
+        path: req.originalUrl,
+        error: err?.stack || String(err),
+    });
     res.status(500).json({ error: 'Internal server error' });
 });
 

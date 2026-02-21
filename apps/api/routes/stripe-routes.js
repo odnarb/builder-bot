@@ -19,6 +19,7 @@ export function registerStripeRoutes(app, deps) {
         recordTierUpgrade,
         setRenewalPreference,
         getRenewalPreference,
+        logger,
     } = deps;
 
     app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, res) => {
@@ -94,7 +95,7 @@ export function registerStripeRoutes(app, deps) {
 
             return res.json({ url: session.url, sku: checkoutSku });
         } catch (err) {
-            console.error(`❌ Stripe session error: ${err.message}`);
+            logger.error(`Stripe session error: `);
             return res.status(500).json({ error: 'Could not create checkout session' });
         }
     }));

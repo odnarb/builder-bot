@@ -60,7 +60,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.json({ tier: user.tier || 'free' });
         } catch (err) {
-            console.error(`❌ Failed to fetch tier for ${userId}: ${err.stack}`);
+            logger.error(`❌ Failed to fetch tier for ${userId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -135,7 +135,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.json({ user });
         } catch (err) {
-            console.error(`❌ Failed to fetch user with email ${email}: ${err.stack}`);
+            logger.error(`❌ Failed to fetch user with email ${email}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -151,7 +151,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.json({ user });
         } catch (err) {
-            console.error(`❌ Failed to fetch user with id ${userId}: ${err.stack}`);
+            logger.error(`❌ Failed to fetch user with id ${userId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -198,7 +198,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
+            logger.error(`❌ Failed to create user with id ${auth0LoginId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -227,7 +227,7 @@ export function registerUserRoutes(app, deps) {
 
             res.json({ status: 'updated', tier });
         } catch (err) {
-            console.error('❌ Tier update failed:', err);
+            logger.error('❌ Tier update failed:', err);
             res.status(500).json({ error: 'Server error' });
         }
     }));
@@ -261,7 +261,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ buildId: docRef.id });
         } catch (err) {
-            console.error(`❌ Failed to create user build for userId ${userId}: ${err.stack}`);
+            logger.error(`❌ Failed to create user build for userId ${userId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -291,7 +291,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to update user build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+            logger.error(`❌ Failed to update user build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -320,7 +320,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+            logger.error(`❌ Failed to add steps to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -349,7 +349,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to add logs to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
+            logger.error(`❌ Failed to add logs to user's build for userId ${userId} and buildId ${buildId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -597,7 +597,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
+            logger.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -625,7 +625,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
+            logger.error(`❌ Failed to create session for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
@@ -646,7 +646,7 @@ export function registerUserRoutes(app, deps) {
 
             return res.status(200).json({ success: true });
         } catch (err) {
-            console.error(`❌ Failed to add log entry for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
+            logger.error(`❌ Failed to add log entry for userId ${userId} and sessionId ${sessionId}: ${err.stack}`);
             res.status(500).json({ error: 'Internal error' });
         }
     }));
