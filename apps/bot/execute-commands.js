@@ -43,10 +43,18 @@ function resolveFollowTargetName({ stepTarget, fallbackUsername }) {
  *   buildId?: string,
  *   commands: Array<Record<string, unknown>>,
  *   username?: string,
+ *   suppressCompletionChat?: boolean,
  * }} params
  * @returns {Promise<void>}
  */
-export async function executeCommands({ bot, buildId, commands, username = 'Commander', decisionPolicy = null }) {
+export async function executeCommands({
+  bot,
+  buildId,
+  commands,
+  username = 'Commander',
+  decisionPolicy = null,
+  suppressCompletionChat = false,
+}) {
   const stepsLog = []
   let buildSuccess = true
   let prepEdits = 0;
@@ -229,12 +237,14 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
     }
   } //end comands set
 
-  if (buildSuccess) {
-    bot.chat(`📐 Build complete!`);
-    console.log(`📐 Build complete!`);
-  } else {
-    bot.chat(`⚠️ Build finished with some errors. Check logs for details.`);
-    console.warn(`⚠️ Build finished with one or more command failures.`);
+  if (!suppressCompletionChat) {
+    if (buildSuccess) {
+      bot.chat(`📐 Build complete!`);
+      console.log(`📐 Build complete!`);
+    } else {
+      bot.chat(`⚠️ Build finished with some errors. Check logs for details.`);
+      console.warn(`⚠️ Build finished with one or more command failures.`);
+    }
   }
 
   //update build success

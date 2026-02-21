@@ -9,6 +9,7 @@ import {
   resolveTier,
 } from '../api/config/tier-policy.js';
 import { executeCommands } from './execute-commands.js';
+import { runDecisionEngineBuild } from './decision-engine.js';
 import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
 import { buildDecisionWorldContext, ensurePathfinderTelemetry } from './world-context.js';
 import { resolveCommanderUsername } from './player-identity.js';
@@ -34,10 +35,23 @@ function normalizeCommanderTier(commander) {
  *   commander: { tier: string },
  *   prompt: string,
  *   decisionPolicy: ReturnType<typeof resolveDecisionTierPolicy>,
+ *   triggerReason?: string | null,
+ *   taskState?: Record<string, unknown>,
+ *   patchPlan?: Record<string, unknown> | null,
+ *   failureDigest?: Array<Record<string, unknown>> | null,
  * }} params
  * @returns {Record<string, unknown>}
  */
-function buildAiContext({ bot, commander, prompt, decisionPolicy }) {
+function buildAiContext({
+  bot,
+  commander,
+  prompt,
+  decisionPolicy,
+  triggerReason = null,
+  taskState = {},
+  patchPlan = null,
+  failureDigest = null,
+}) {
   ensurePathfinderTelemetry(bot);
   const position = bot?.entity?.position;
   const inventoryItems = bot?.inventory?.items?.() || [];
@@ -82,6 +96,22 @@ function buildAiContext({ bot, commander, prompt, decisionPolicy }) {
     decisionPolicy: resolvedDecisionPolicy,
   });
 
+  const baseTaskState = {
+    task: 'build',
+    promptChars: prompt.length,
+    promptWords: prompt.trim().split(/\s+/).length,
+    decisionPolicyTier: resolvedDecisionPolicy.tier,
+    maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
+    maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
+    maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
+    maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
+    ...(taskState && typeof taskState === 'object' ? taskState : {}),
+  };
+
+  if (patchPlan && typeof patchPlan === 'object') {
+    baseTaskState.patchPlan = patchPlan;
+  }
+
   return {
     identity: {
       userId: process.env.USER_ID || process.env.COMMANDER_UUID || null,
@@ -106,16 +136,8 @@ function buildAiContext({ bot, commander, prompt, decisionPolicy }) {
     })),
     nearbyEntities,
     nearbyBlocks: nearbyBlockSummary,
-    taskState: {
-      task: 'build',
-      promptChars: prompt.length,
-      promptWords: prompt.trim().split(/\s+/).length,
-      decisionPolicyTier: resolvedDecisionPolicy.tier,
-      maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
-      maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
-      maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
-      maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
-    },
+    triggerReason: triggerReason || null,
+    taskState: baseTaskState,
     usageCounters: {
       requestCount: 1,
     },
@@ -130,6 +152,9 @@ function buildAiContext({ bot, commander, prompt, decisionPolicy }) {
       allowAggressiveRecovery: resolvedDecisionPolicy.allowAggressiveRecovery,
     },
     ...decisionWorldContext,
+    failureDigest: Array.isArray(failureDigest) && failureDigest.length > 0
+      ? failureDigest
+      : decisionWorldContext.failureDigest,
   };
 }
 
@@ -147,6 +172,65 @@ function overTierPromptLimit({ commander, prompt }) {
   const tier = normalizeCommanderTier(commander);
   const tierAiPolicy = getTierAiPolicy(tier);
   return estimatePromptTokens(prompt) > Number(tierAiPolicy.maxInputTokensPerRequest);
+}
+
+function countPlacementSteps(steps) {
+  return Array.isArray(steps)
+    ? steps.filter((step) => typeof step?.block === 'string').length
+    : 0;
+}
+
+function collectRequiredBlockNames(commands) {
+  if (!Array.isArray(commands)) {
+    return [];
+  }
+
+  return [...new Set(commands
+    .flatMap((step) => {
+      const names = [];
+      if (typeof step?.block === 'string') {
+        names.push(step.block);
+      }
+      if (typeof step?.fillBlock === 'string') {
+        names.push(step.fillBlock);
+      }
+      return names;
+    })
+    .map((block) => String(block).replace(/^minecraft:/, '').trim().toLowerCase())
+    .filter(Boolean))];
+}
+
+async function ensureCreativeMaterialsForCommands({ bot, commands, materialCache }) {
+  const cache = materialCache instanceof Set ? materialCache : new Set();
+  const needed = collectRequiredBlockNames(commands)
+    .filter((name) => !cache.has(name));
+
+  if (needed.length === 0) {
+    return;
+  }
+
+  bot.chat(`Giving self the materials needed for the build...`);
+
+  for (const blockName of needed) {
+    try {
+      const itemId = bot?.registry?.itemsByName?.[blockName]?.id;
+      if (itemId === undefined) {
+        console.warn(`⚠️ Unknown block type: ${blockName}`);
+        continue;
+      }
+
+      if (bot?.creative?.give) {
+        await bot.creative.give(itemId, 999);
+      } else {
+        bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
+        await bot.waitForTicks(20);
+      }
+      cache.add(blockName);
+      console.log(`✅ Gave ${blockName}`);
+    } catch (error) {
+      console.warn(`❌ Failed to give ${blockName}: ${error.message}`);
+    }
+  }
 }
 
 async function runBestEffortPersistence(label, fn) {
@@ -382,24 +466,63 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           () => createUserBuild({ build })
         );
 
-        let steps = [];
+        const buildOrigin = {
+          x: bot.entity.position.x,
+          y: bot.entity.position.y,
+          z: bot.entity.position.z,
+        };
+        const materialCache = new Set();
 
-        //get the build steps from the AI
-        const aiPayload = await getStructureAndTagsFromAI({
-          message: prompt,
-          tier: normalizedTier,
-          context: buildAiContext({
-            bot,
-            commander: { ...commander, tier: normalizedTier },
-            prompt,
-            decisionPolicy,
-          }),
-        });
+        async function requestPlanSteps({ replanAttempt = 0, failureDigest = [] } = {}) {
+          const aiPayload = await getStructureAndTagsFromAI({
+            message: prompt,
+            tier: normalizedTier,
+            context: buildAiContext({
+              bot,
+              commander: { ...commander, tier: normalizedTier },
+              prompt,
+              decisionPolicy,
+              triggerReason: replanAttempt > 0 ? 'build_failure' : null,
+              taskState: replanAttempt > 0
+                ? {
+                  phase: 'patch_replan',
+                  buildFailure: true,
+                  replanAttempt,
+                  maxReplanAttempts: decisionPolicy.maxReplanAttempts,
+                }
+                : {
+                  phase: 'initial_plan',
+                },
+              patchPlan: replanAttempt > 0
+                ? {
+                  mode: 'patch_replan',
+                  replanAttempt,
+                  maxReplanAttempts: decisionPolicy.maxReplanAttempts,
+                  failureDigest: Array.isArray(failureDigest) ? failureDigest.slice(-6) : [],
+                }
+                : null,
+              failureDigest,
+            }),
+          });
 
-        try {
           const normalizedPlan = normalizeInstructionPlan(aiPayload);
           const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan);
-          steps = blocks;
+          return {
+            steps: blocks,
+            tags,
+            actionCount: normalizedPlan.actions.length,
+          };
+        }
+
+        let steps = [];
+        let initialTags = [];
+        let initialActionCount = 0;
+
+        try {
+          const initialPlan = await requestPlanSteps();
+          steps = initialPlan.steps;
+          initialTags = initialPlan.tags;
+          initialActionCount = initialPlan.actionCount;
 
           if (buildId) {
             await runBestEffortPersistence(
@@ -409,18 +532,16 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                 build: {
                   event: "steps_parsed",
                   blockCount: steps.length,
-                  tags,
-                  actionCount: normalizedPlan.actions.length,
+                  tags: initialTags,
+                  actionCount: initialActionCount,
                 }
               })
             );
           }
-
         } catch (error) {
           steps = [];
           bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
 
-          //log the build error to the server
           if (buildId) {
             await runBestEffortPersistence(
               'Update build with parsing error',
@@ -438,8 +559,6 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         }
 
         bot.chat(`💾 Saving build steps...`);
-
-        //save steps to backend, later
         if (buildId) {
           await runBestEffortPersistence(
             'Upload build steps',
@@ -448,21 +567,19 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         }
 
         if (steps.length > 0) {
-          const placementStepCount = steps.filter(step => typeof step.block === 'string').length;
+          const initialPlacementCount = countPlacementSteps(steps);
 
-          //check build size, if user's tier too low, reject it
-          if (overTierBlockLimit({ commander, numBlocks: placementStepCount })) {
+          if (overTierBlockLimit({ commander, numBlocks: initialPlacementCount })) {
             const maxBlocksPerBuild = getTierFeaturePolicy(normalizedTier).maxBlocksPerBuild;
-            bot.chat(`⚠️ Tier ${normalizedTier} allows up to ${maxBlocksPerBuild} blocks per build (${placementStepCount} requested).`);
-            console.log(`⚠️ User's tier (${normalizedTier}) is too low for ${placementStepCount} blocks to be placed.`);
+            bot.chat(`⚠️ Tier ${normalizedTier} allows up to ${maxBlocksPerBuild} blocks per build (${initialPlacementCount} requested).`);
+            console.log(`⚠️ User's tier (${normalizedTier}) is too low for ${initialPlacementCount} blocks to be placed.`);
 
-            //user hit tier limit, log this
             fireAndForgetLogEntry({
               type: "block_tier_limit",
               message: "user",
               data: {
                 tier: normalizedTier,
-                requestedPlacements: placementStepCount,
+                requestedPlacements: initialPlacementCount,
                 maxBlocksPerBuild,
               },
               level: 1
@@ -471,64 +588,118 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
             return;
           }
 
-          // adjust action coordinates relative to the bot's position
-          const adjustedCommands = offsetStructure(
-            steps,
-            { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z },
-            BUILD_START_OFFSET,
-          );
-
-          //clear the inventory first before a build
-          await bot.creative.clearInventory();
-
-          bot.chat(`Giving self the materials needed for the build...`);
-
-          // 1. Extract unique blocks from the command list
-          const blockNames = [...new Set(adjustedCommands
-            .flatMap((step) => {
-              const names = [];
-              if (typeof step.block === 'string') {
-                names.push(step.block);
-              }
-              if (typeof step.fillBlock === 'string') {
-                names.push(step.fillBlock);
-              }
-              return names;
-            })
-            .map(block => String(block).replace(/^minecraft:/, '')))];
-
-          // 2. Give all blocks to the bot ahead of time
-          for (const blockName of blockNames) {
-            try {
-              const itemId = bot.registry.itemsByName[blockName]?.id;
-              if (itemId === undefined) {
-                console.warn(`⚠️ Unknown block type: ${blockName}`);
-                continue;
-              }
-
-              if (bot.creative?.give) {
-                await bot.creative.give(itemId, 999);
-              } else {
-                bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
-                await bot.waitForTicks(20);
-              }
-
-              console.log(`✅ Gave ${blockName}`);
-            } catch (err) {
-              console.warn(`❌ Failed to give ${blockName}: ${err.message}`);
-            }
+          if (bot?.creative?.clearInventory) {
+            await bot.creative.clearInventory();
           }
 
           bot.chat(`Attempting to build...`);
 
-          //finalize the command set
-          await executeCommands({
-            bot,
-            buildId,
-            commands: adjustedCommands,
-            username,
+          const decisionResult = await runDecisionEngineBuild({
+            prompt,
             decisionPolicy,
+            initialCommands: steps,
+            onStateChange: ({ state, ...stateData }) => {
+              fireAndForgetLogEntry({
+                type: 'decision_engine_state',
+                message: state,
+                data: {
+                  tier: normalizedTier,
+                  ...stateData,
+                },
+                level: state === 'FAILED' ? 1 : 0,
+              });
+            },
+            executePlan: async ({ commands, attemptNumber }) => {
+              if (attemptNumber > 1) {
+                const totalAttempts = Number(decisionPolicy.maxReplanAttempts || 0) + 1;
+                bot.chat(`🔁 Retrying build with patch plan (${attemptNumber}/${totalAttempts})...`);
+              }
+
+              const adjustedCommands = offsetStructure(
+                commands,
+                buildOrigin,
+                BUILD_START_OFFSET,
+              );
+              await ensureCreativeMaterialsForCommands({
+                bot,
+                commands: adjustedCommands,
+                materialCache,
+              });
+
+              return executeCommands({
+                bot,
+                buildId,
+                commands: adjustedCommands,
+                username,
+                decisionPolicy,
+                suppressCompletionChat: true,
+              });
+            },
+            requestPatchPlan: async ({ replanAttempt, failureDigest }) => {
+              const patchPlan = await requestPlanSteps({
+                replanAttempt,
+                failureDigest,
+              });
+
+              const patchPlacementCount = countPlacementSteps(patchPlan.steps);
+              if (overTierBlockLimit({ commander, numBlocks: patchPlacementCount })) {
+                const maxBlocksPerBuild = getTierFeaturePolicy(normalizedTier).maxBlocksPerBuild;
+                throw new Error(`Patch plan exceeds tier block limits (${patchPlacementCount}/${maxBlocksPerBuild}).`);
+              }
+
+              if (buildId) {
+                await runBestEffortPersistence(
+                  'Update build with patch plan metadata',
+                  () => updateUserBuild({
+                    buildId,
+                    build: {
+                      event: 'patch_steps_parsed',
+                      replanAttempt,
+                      blockCount: patchPlan.steps.length,
+                      actionCount: patchPlan.actionCount,
+                      tags: patchPlan.tags,
+                    },
+                  })
+                );
+                await runBestEffortPersistence(
+                  'Upload patch build steps',
+                  () => uploadBuildSteps({ buildId, steps: patchPlan.steps })
+                );
+              }
+
+              return {
+                commands: patchPlan.steps,
+                meta: {
+                  replanAttempt,
+                  actionCount: patchPlan.actionCount,
+                },
+              };
+            },
           });
+
+          if (decisionResult.success) {
+            bot.chat(`📐 Build complete!`);
+            console.log(`📐 Build complete!`);
+          } else {
+            bot.chat(`⚠️ Build failed after ${decisionResult.attempts.length} attempt(s).`);
+            console.warn(`⚠️ Build failed after retries. reason=${decisionResult.failureReason || 'unknown'}`);
+          }
+
+          if (buildId) {
+            await runBestEffortPersistence(
+              'Update build with decision engine summary',
+              () => updateUserBuild({
+                buildId,
+                build: {
+                  event: 'decision_engine_finished',
+                  success: decisionResult.success,
+                  attempts: decisionResult.attempts.length,
+                  replans: decisionResult.replanCount,
+                  failureReason: decisionResult.failureReason || null,
+                },
+              })
+            );
+          }
         } else {
           bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
           console.log(`❌ No structure received from AI or failed to parse`);

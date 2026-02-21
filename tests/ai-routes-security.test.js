@@ -120,3 +120,51 @@ test('POST /ai-get-structure ignores caller tier and uses persisted user tier', 
   assert.equal(capturedParams.usageKey, 'auth:auth|alice:free');
   assert.equal(capturedParams.authUserId, 'auth|alice');
 });
+
+test('POST /ai-get-structure keeps persisted tier on patch-replan requests', async () => {
+  const app = createMockApp();
+  let capturedParams = null;
+  const deps = {
+    jwtCheck: (req, _res, next) => {
+      req.auth = { payload: { sub: 'auth|builder' } };
+      return next();
+    },
+    asyncHandler: createAsyncHandler(),
+    getUserById: async ({ userId }) => ({ id: userId, tier: 'free' }),
+    resolveTier: (tier) => {
+      const normalized = String(tier || 'free').toLowerCase();
+      return ['free', 'starter', 'pro', 'admin'].includes(normalized) ? normalized : 'free';
+    },
+    resolveAiUsageKey: (req, tier) => `auth:${req.auth?.payload?.sub}:${tier}`,
+    createAiGetStructureHandler: () => async (params) => {
+      capturedParams = params;
+      return { status: 200, body: { ok: true } };
+    },
+  };
+  registerAiRoutes(app, deps);
+  const handlers = app.routes.get('POST /ai-get-structure');
+  const req = {
+    body: {
+      message: 'build patch plan',
+      tier: 'admin',
+      context: {
+        triggerReason: 'build_failure',
+        identity: { tier: 'admin' },
+        taskState: {
+          patchPlan: { mode: 'patch_replan', replanAttempt: 2 },
+        },
+      },
+    },
+    headers: { authorization: 'Bearer test' },
+    ip: '127.0.0.1',
+  };
+  const res = createMockResponse();
+
+  await runRouteHandlers(handlers, req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.ok, true);
+  assert.equal(capturedParams.rawTier, 'free');
+  assert.equal(capturedParams.usageKey, 'auth:auth|builder:free');
+  assert.equal(capturedParams.authUserId, 'auth|builder');
+});
