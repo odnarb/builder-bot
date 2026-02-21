@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  isAuthorizedWsClient,
   resolveWsBuildPrompt,
   resolveWsInstructionPlanPayload,
 } from '../apps/bot/ws-server.js';
@@ -36,4 +37,18 @@ test('resolveWsInstructionPlanPayload extracts instruction plans from either fie
 
   assert.deepEqual(fromPlan, { actions: [{ type: 'stop' }] });
   assert.deepEqual(fromPayload, { actions: [{ type: 'move_to', x: 0, y: 0, z: 0 }] });
+});
+
+test('isAuthorizedWsClient validates authToken query parameter', () => {
+  const authorized = isAuthorizedWsClient({
+    request: { url: '/?authToken=abc123' },
+    expectedAuthToken: 'abc123',
+  });
+  const rejected = isAuthorizedWsClient({
+    request: { url: '/?authToken=wrong' },
+    expectedAuthToken: 'abc123',
+  });
+
+  assert.equal(authorized, true);
+  assert.equal(rejected, false);
 });

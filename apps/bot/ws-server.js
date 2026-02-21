@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { timingSafeEqual } from 'crypto';
 import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
@@ -37,11 +38,40 @@ export function resolveWsInstructionPlanPayload(message) {
   return message.plan || message.payload || null;
 }
 
+function safeTokenEquals(expectedToken, providedToken) {
+  const expected = Buffer.from(String(expectedToken || ''), 'utf8');
+  const provided = Buffer.from(String(providedToken || ''), 'utf8');
+  if (expected.length === 0 || provided.length === 0 || expected.length !== provided.length) {
+    return false;
+  }
+  return timingSafeEqual(expected, provided);
+}
+
+export function isAuthorizedWsClient({ request, expectedAuthToken }) {
+  const expectedToken = String(expectedAuthToken || '').trim();
+  if (!expectedToken) {
+    return false;
+  }
+
+  const requestUrl = new URL(String(request?.url || '/'), 'ws://localhost');
+  const providedToken = String(requestUrl.searchParams.get('authToken') || '').trim();
+  return safeTokenEquals(expectedToken, providedToken);
+}
+
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
-  const wss = new WebSocketServer({ port: 3002 });
+  const expectedWsAuthToken = String(process.env.AUTH_TOKEN || '').trim();
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 3002 });
 
-  wss.on('connection', ws => {
+  wss.on('connection', (ws, request) => {
+    if (!isAuthorizedWsClient({ request, expectedAuthToken: expectedWsAuthToken })) {
+      ws.send(JSON.stringify({
+        type: 'ws_auth_error',
+        reason: 'unauthorized',
+      }));
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
     console.log('📡 Client connected');
 
     ws.on('message', async rawData => {
@@ -206,7 +236,7 @@ export function startBotServer({ bot, commander }) {
     });
   });
 
-  console.log('🛰️ Bot WebSocket server running on ws://localhost:3002');
+  console.log('🛰️ Bot WebSocket server running on ws://127.0.0.1:3002');
 
   // 💬 Broadcast in-game chat to all WebSocket clients
   bot.on('chat', (username, message) => {

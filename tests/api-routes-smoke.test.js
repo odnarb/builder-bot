@@ -79,7 +79,7 @@ test('GET / returns API heartbeat', async () => {
   }
 });
 
-test('POST /ai-get-structure validates missing message', async () => {
+test('POST /ai-get-structure requires auth', async () => {
   const server = await startServer();
 
   try {
@@ -90,8 +90,8 @@ test('POST /ai-get-structure validates missing message', async () => {
     });
     const payload = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(payload.error, 'message is required');
+    assert.equal(response.status, 401);
+    assert.equal(payload.error, 'Unauthorized');
   } finally {
     await server.close();
   }

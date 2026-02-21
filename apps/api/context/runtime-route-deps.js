@@ -19,6 +19,7 @@ import {
 /**
  * Resolve a stable per-user usage key for monthly token budgeting.
  * Falls back to anonymous keys when auth is not present.
+ * Never trusts caller-supplied identity headers.
  * @param {import('express').Request} req
  * @param {'free' | 'starter' | 'pro' | 'admin'} tier
  * @returns {string}
@@ -27,11 +28,6 @@ function resolveAiUsageKey(req, tier) {
     const authUserId = req.auth?.payload?.sub;
     if (authUserId) {
         return `auth:${authUserId}`;
-    }
-
-    const headerUserId = req.headers['x-user-id'];
-    if (typeof headerUserId === 'string' && headerUserId.trim().length > 0) {
-        return `header:${headerUserId}`;
     }
 
     return `anon:${tier}:${req.ip || 'unknown-ip'}`;

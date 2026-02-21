@@ -1,3 +1,30 @@
+import { createInMemoryRateLimiter } from '../middleware/in-memory-rate-limit.js';
+
+const PROCESSED_CHECKOUT_SESSIONS = new Set();
+
+function hasAllowedSubscriptionStatus(subscription) {
+    if (!subscription || typeof subscription !== 'object') {
+        return false;
+    }
+    const status = String(subscription.status || '').toLowerCase();
+    return status === 'active' || status === 'trialing';
+}
+
+function isSessionPaidAndComplete(session) {
+    const status = String(session?.status || '').toLowerCase();
+    if (status && status !== 'complete') {
+        return false;
+    }
+
+    const paymentStatus = String(session?.payment_status || '').toLowerCase();
+    const mode = String(session?.mode || '').toLowerCase();
+    if (mode === 'subscription') {
+        return paymentStatus === 'paid' || hasAllowedSubscriptionStatus(session?.subscription);
+    }
+
+    return paymentStatus === 'paid';
+}
+
 /**
  * Register Stripe checkout and confirmation routes.
  * @param {import('express').Express} app
@@ -21,8 +48,18 @@ export function registerStripeRoutes(app, deps) {
         getRenewalPreference,
         logger,
     } = deps;
+    const stripeCreateRateLimiter = createInMemoryRateLimiter({
+        windowMs: Number(process.env.STRIPE_CREATE_RATE_LIMIT_WINDOW_MS || 300000),
+        maxRequests: Number(process.env.STRIPE_CREATE_RATE_LIMIT_MAX_REQUESTS || 20),
+        keyPrefix: 'stripe-create-checkout',
+    });
+    const stripeConfirmRateLimiter = createInMemoryRateLimiter({
+        windowMs: Number(process.env.STRIPE_CONFIRM_RATE_LIMIT_WINDOW_MS || 300000),
+        maxRequests: Number(process.env.STRIPE_CONFIRM_RATE_LIMIT_MAX_REQUESTS || 40),
+        keyPrefix: 'stripe-confirm-checkout',
+    });
 
-    app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, res) => {
+    app.post('/stripe/create-checkout-session', jwtCheck, stripeCreateRateLimiter, asyncHandler(async (req, res) => {
         const CHECKOUT_URL = process.env.NODE_ENV === 'production' ? `https://${process.env.DOMAIN}` : 'http://localhost:5173';
         const userId = req.auth?.payload?.sub;
         const existingAcceptance = userId ? getPolicyAcceptance(userId) : null;
@@ -95,20 +132,47 @@ export function registerStripeRoutes(app, deps) {
 
             return res.json({ url: session.url, sku: checkoutSku });
         } catch (err) {
-            logger.error(`Stripe session error: `);
+            logger.error(`Stripe session error: ${err?.message || err}`);
             return res.status(500).json({ error: 'Could not create checkout session' });
         }
     }));
 
-    app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => {
-        const { sessionId } = req.body;
+    app.post('/stripe/confirm-checkout', jwtCheck, stripeConfirmRateLimiter, asyncHandler(async (req, res) => {
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+        const userId = req.auth?.payload?.sub;
+        if (!userId) {
+            return res.status(401).json({ error: 'Authentication is required.' });
+        }
+        if (!sessionId) {
+            return res.status(400).json({ error: 'sessionId is required.' });
+        }
+        if (PROCESSED_CHECKOUT_SESSIONS.has(sessionId)) {
+            return res.status(409).json({ error: 'Checkout session has already been processed.' });
+        }
+
         const session = await stripe.checkout.sessions.retrieve(sessionId, {
             expand: ['subscription'],
         });
 
+        const sessionUserId = typeof session?.metadata?.userId === 'string'
+            ? session.metadata.userId.trim()
+            : '';
+        if (!sessionUserId || sessionUserId !== userId) {
+            return res.status(403).json({
+                error: 'Checkout session does not belong to the authenticated user.',
+            });
+        }
+        if (!isSessionPaidAndComplete(session)) {
+            return res.status(422).json({
+                error: 'Checkout is not completed or payment is not settled.',
+            });
+        }
+
         const metadataTier = resolveTier(session.metadata?.tier || 'free');
+        if (metadataTier === 'free') {
+            return res.status(400).json({ error: 'Checkout session metadata tier is invalid.' });
+        }
         const skuCode = session.metadata?.skuCode || null;
-        const userId = req.auth.payload.sub;
 
         const termsVersion = session.metadata?.termsVersion;
         const privacyVersion = session.metadata?.privacyVersion;
@@ -129,8 +193,11 @@ export function registerStripeRoutes(app, deps) {
         });
 
         const user = await getUserById({ userId });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found.' });
+        }
         const fromTier = resolveTier(user?.tier || 'free');
-        await updateUserTier({ userId: user.id, tier: metadataTier });
+        await updateUserTier({ userId, tier: metadataTier });
         invalidateAdminFallbackTierCache(userId);
         await recordTierUpgrade({
             userId,
@@ -151,6 +218,7 @@ export function registerStripeRoutes(app, deps) {
                 currentPeriodEnd,
             });
         }
+        PROCESSED_CHECKOUT_SESSIONS.add(sessionId);
 
         res.json({
             status: 'success',
