@@ -19,20 +19,19 @@ function getMonthKey(now = new Date()) {
 
 /**
  * Normalize tier naming for funnel analytics.
- * Canonical mapping keeps `starter` represented as `lite` in reports.
  * @param {string | undefined | null} tier
- * @returns {'free' | 'lite' | 'pro' | 'server_license'}
+ * @returns {'free' | 'starter' | 'pro' | 'admin'}
  */
 function normalizeFunnelTier(tier) {
     const normalized = String(tier || '').trim().toLowerCase();
-    if (normalized === 'starter' || normalized === 'lite') {
-        return 'lite';
+    if (normalized === 'starter') {
+        return 'starter';
     }
     if (normalized === 'pro') {
         return 'pro';
     }
-    if (normalized === 'admin' || normalized === 'server_license') {
-        return 'server_license';
+    if (normalized === 'admin') {
+        return 'admin';
     }
     return 'free';
 }
@@ -43,7 +42,7 @@ function normalizeFunnelTier(tier) {
  * @returns {{
  *   userId: string,
  *   firstSeenAt: string,
- *   currentTier: 'free' | 'lite' | 'pro' | 'server_license',
+ *   currentTier: 'free' | 'starter' | 'pro' | 'admin',
  *   featureUsage: Record<string, number>,
  * }}
  */
@@ -223,15 +222,14 @@ export async function recordTierUpgrade({ userId, fromTier, toTier, skuCode = nu
  *   days: number,
  *   users: {
  *     freeUsers: number,
- *     liteUsers: number,
+ *     starterUsers: number,
  *     proUsers: number,
- *     serverLicenseUsers: number,
+ *     adminUsers: number,
  *   },
  *   conversionPercentages: {
- *     freeToLite: number,
- *     liteToPro: number,
- *     proToServerLicense: number,
- *     megaBuildPassPurchase: number,
+ *     freeToStarter: number,
+ *     starterToPro: number,
+ *     proToAdmin: number,
  *   },
  *   upgradeTimeToConversionHours: number,
  *   topFeaturesBeforeUpgrade: Array<{ feature: string, count: number }>,
@@ -245,16 +243,15 @@ export function getConversionFunnelReport(params = {}) {
     const windowEvents = conversionEvents.filter((event) => new Date(event.timestamp).getTime() >= cutoffMs);
     const usersByTier = {
         freeUsers: new Set(),
-        liteUsers: new Set(),
+        starterUsers: new Set(),
         proUsers: new Set(),
-        serverLicenseUsers: new Set(),
+        adminUsers: new Set(),
     };
 
     const usersStartedFree = new Set();
-    const usersFreeToLite = new Set();
-    const usersLiteToPro = new Set();
-    const usersProToServer = new Set();
-    const usersMegaBuildPass = new Set();
+    const usersFreeToStarter = new Set();
+    const usersStarterToPro = new Set();
+    const usersProToAdmin = new Set();
 
     const firstSignupByUser = new Map();
     const firstPaidByUser = new Map();
@@ -278,27 +275,27 @@ export function getConversionFunnelReport(params = {}) {
             const fromTier = normalizeFunnelTier(event.fromTier);
             const toTier = normalizeFunnelTier(event.toTier);
 
-            if (toTier === 'lite') {
-                usersByTier.liteUsers.add(userId);
+            if (toTier === 'starter') {
+                usersByTier.starterUsers.add(userId);
             }
             if (toTier === 'pro') {
                 usersByTier.proUsers.add(userId);
             }
-            if (toTier === 'server_license') {
-                usersByTier.serverLicenseUsers.add(userId);
+            if (toTier === 'admin') {
+                usersByTier.adminUsers.add(userId);
             }
 
-            if (fromTier === 'free' && toTier === 'lite') {
-                usersFreeToLite.add(userId);
+            if (fromTier === 'free' && toTier === 'starter') {
+                usersFreeToStarter.add(userId);
             }
-            if (fromTier === 'lite' && toTier === 'pro') {
-                usersLiteToPro.add(userId);
+            if (fromTier === 'starter' && toTier === 'pro') {
+                usersStarterToPro.add(userId);
             }
-            if (fromTier === 'pro' && toTier === 'server_license') {
-                usersProToServer.add(userId);
+            if (fromTier === 'pro' && toTier === 'admin') {
+                usersProToAdmin.add(userId);
             }
 
-            if (!firstPaidByUser.has(userId) && (toTier === 'lite' || toTier === 'pro' || toTier === 'server_license')) {
+            if (!firstPaidByUser.has(userId) && (toTier === 'starter' || toTier === 'pro' || toTier === 'admin')) {
                 firstPaidByUser.set(userId, new Date(event.timestamp).getTime());
             }
 
@@ -316,20 +313,15 @@ export function getConversionFunnelReport(params = {}) {
 
         if (event.type === 'checkout_started') {
             const toTier = normalizeFunnelTier(event.toTier);
-            if (toTier === 'lite') {
-                usersByTier.liteUsers.add(userId);
+            if (toTier === 'starter') {
+                usersByTier.starterUsers.add(userId);
             }
             if (toTier === 'pro') {
                 usersByTier.proUsers.add(userId);
             }
-            if (toTier === 'server_license') {
-                usersByTier.serverLicenseUsers.add(userId);
+            if (toTier === 'admin') {
+                usersByTier.adminUsers.add(userId);
             }
-        }
-
-        const skuCode = String(event.skuCode || '').toLowerCase();
-        if (skuCode.includes('mega_build_pass')) {
-            usersMegaBuildPass.add(userId);
         }
     }
 
@@ -349,24 +341,22 @@ export function getConversionFunnelReport(params = {}) {
         .slice(0, 20);
 
     const freeUsersCount = usersStartedFree.size;
-    const liteUsersCount = usersByTier.liteUsers.size;
+    const starterUsersCount = usersByTier.starterUsers.size;
     const proUsersCount = usersByTier.proUsers.size;
-    const paidUsersCount = new Set([...usersByTier.liteUsers, ...usersByTier.proUsers, ...usersByTier.serverLicenseUsers]).size;
 
     return {
         generatedAt: now.toISOString(),
         days,
         users: {
             freeUsers: freeUsersCount,
-            liteUsers: liteUsersCount,
+            starterUsers: starterUsersCount,
             proUsers: proUsersCount,
-            serverLicenseUsers: usersByTier.serverLicenseUsers.size,
+            adminUsers: usersByTier.adminUsers.size,
         },
         conversionPercentages: {
-            freeToLite: freeUsersCount > 0 ? Number(((usersFreeToLite.size / freeUsersCount) * 100).toFixed(2)) : 0,
-            liteToPro: liteUsersCount > 0 ? Number(((usersLiteToPro.size / liteUsersCount) * 100).toFixed(2)) : 0,
-            proToServerLicense: proUsersCount > 0 ? Number(((usersProToServer.size / proUsersCount) * 100).toFixed(2)) : 0,
-            megaBuildPassPurchase: paidUsersCount > 0 ? Number(((usersMegaBuildPass.size / paidUsersCount) * 100).toFixed(2)) : 0,
+            freeToStarter: freeUsersCount > 0 ? Number(((usersFreeToStarter.size / freeUsersCount) * 100).toFixed(2)) : 0,
+            starterToPro: starterUsersCount > 0 ? Number(((usersStarterToPro.size / starterUsersCount) * 100).toFixed(2)) : 0,
+            proToAdmin: proUsersCount > 0 ? Number(((usersProToAdmin.size / proUsersCount) * 100).toFixed(2)) : 0,
         },
         upgradeTimeToConversionHours: upgradeDurationsHours.length > 0
             ? Number((upgradeDurationsHours.reduce((sum, hours) => sum + hours, 0) / upgradeDurationsHours.length).toFixed(2))

@@ -2,6 +2,15 @@ import { Firestore } from '@google-cloud/firestore';
 
 const db = new Firestore();
 
+/**
+ * Return a Firestore Timestamp from the same package instance backing `db`.
+ * This avoids cross-package Timestamp instance mismatches.
+ * @returns {import('@google-cloud/firestore').Timestamp}
+ */
+export function nowTimestamp() {
+    return Firestore.Timestamp.now();
+}
+
 export async function createUser({ user }) {
     const userRef = db.collection('users').doc(user.auth0LoginId);
     const doc = await userRef.get();

@@ -1,17 +1,29 @@
+import 'dotenv/config.js';
+
 const API_URL = process.env.API_URL || 'http://localhost:3001'
-const AUTH_TOKEN = process.env.AUTH_TOKEN || "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IlIydEptbjAwVXBDQkFLR1hwQlgzayJ9.eyJpc3MiOiJodHRwczovL2Rldi1vM2YxMG81YjR6djBjNjhrLnVzLmF1dGgwLmNvbS8iLCJzdWIiOiJhdXRoMHw2ODgxMjgzMDJiY2ExZGViZmQyY2U1MzMiLCJhdWQiOlsiaHR0cHM6Ly9hcGkubWNidWlsZGVyYm90LmNvbSIsImh0dHBzOi8vZGV2LW8zZjEwbzViNHp2MGM2OGsudXMuYXV0aDAuY29tL3VzZXJpbmZvIl0sImlhdCI6MTc1MzQ5MTM4MSwiZXhwIjoxNzUzNTc3NzgxLCJzY29wZSI6Im9wZW5pZCBwcm9maWxlIGVtYWlsIiwiYXpwIjoiQ3Y5VWljWXN0VmozM1hEeHN3V0FRNTlZeTdJNFVtZWoifQ.qdMQ-U9OE3aRqE1L-0Vx_i_Mk0OQNsbst9cCHrRI8LFLsRJ8tnTtGwFLIrFz2IyavlvBE7aEWJ4ggaa1Klee9_JeHewRBUbMmvscjddBbavWtUaQCoRVWnWWMqZAWobUGoiGRnPU33vQPzsnmWi7SY_HFwjGN437GdyQQKhoURBhIwSqkHEZ7ija80NlApmC-41yZAicjcKfsZkVVLWQatKOZY6KE3koRw3Qdxk9A6-cptaNx-UClk_zWwKUm9XWOA3GkHk7vxG6SxJFKT72vcSzt_FHLT58CG34NGUxr3EyfIef1WA67Cy8P1j-RfLne_R7h0QTipVfn_7rOiZ09Q"
+const AUTH_TOKEN = String(process.env.AUTH_TOKEN || '').trim()
 const SESSION_ID = process.env.SESSION_ID || '123-123-1234'
 
 function authHeaders() {
-    return {
+    const headers = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${AUTH_TOKEN}`,
     };
+
+    if (AUTH_TOKEN) {
+        headers.Authorization = `Bearer ${AUTH_TOKEN}`;
+    }
+
+    return headers;
 }
 
 function handleApiError(res, context = '') {
-    return res.text().then(msg => {
-        throw new Error(`❌ ${context} failed: ${res.status} - ${msg}`);
+    return res.text().then((msg) => {
+        const body = msg || '{}';
+        const status = Number(res.status || 0);
+        const authHint = (status === 401 || status === 403)
+            ? ' Set AUTH_TOKEN to a fresh access token for local bot runs.'
+            : '';
+        throw new Error(`❌ ${context} failed: ${status} - ${body}${authHint}`);
     });
 }
 

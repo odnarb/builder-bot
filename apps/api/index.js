@@ -18,11 +18,11 @@ import {
     getUserById,
     getUsersBuildById,
     getUsersBuilds,
+    nowTimestamp,
     updateUsersBuild,
     updateUsersSession,
     updateUserTier
 } from '../core/firestore/users.js';
-import { Timestamp } from '@google-cloud/firestore';
 import {
     getTierAiPolicy,
     getTierFeaturePolicy,
@@ -98,6 +98,13 @@ import {
     setActiveSessions,
     setQueueDepth,
 } from './utils/ops-metrics.js';
+import {
+    evaluateEmergencyMarginGuard,
+    getEmergencyMarginGuardState,
+    setEmergencyMarginGuardManualOverride,
+    shouldForceThinSnapshots,
+    shouldThrottleFreeTier,
+} from './utils/emergency-margin-guard.js';
 import {
     acceptPolicyDocuments,
     createMarketplaceListing,
@@ -310,6 +317,35 @@ const INFRA_COST_PER_REQUEST_USD = Object.freeze({
     pro: 0.00024,
     admin: 0.0002,
 });
+const EMERGENCY_GUARD_EVAL_CACHE_TTL_MS = Math.max(
+    5000,
+    Number(process.env.EMERGENCY_GUARD_CACHE_TTL_MS || 45000),
+);
+const ADMIN_TIER_FALLBACK_CACHE_TTL_MS = Math.max(
+    30000,
+    Math.min(120000, Number(process.env.ADMIN_TIER_FALLBACK_CACHE_TTL_MS || 60000)),
+);
+const FREE_TIER_THROTTLE_ERROR_CODE = 'FREE_TIER_THROTTLED_GUARD_ACTIVE';
+const DEFAULT_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS = Math.max(
+    15,
+    Number(process.env.FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS || 60),
+);
+const MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS = 3600;
+const EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE = 'DISABLE_GUARD_TEMPORARILY';
+const ADMIN_SCOPE_TOKENS = Object.freeze(['admin', 'admin:all', 'read:admin', 'write:admin', 'ops:admin']);
+const ADMIN_ROLE_CLAIM_KEYS = Object.freeze(
+    [
+        process.env.AUTH0_ADMIN_ROLE_CLAIM,
+        'https://minecraft-ai-agent/roles',
+        'roles',
+    ].filter(Boolean),
+);
+const emergencyGuardEvaluationRuntime = {
+    lastEvaluatedAtMs: 0,
+    lastResult: null,
+    inFlightPromise: null,
+};
+const adminFallbackTierCache = new Map();
 
 /**
  * Basic moderation filter for user prompts.
@@ -324,6 +360,269 @@ function detectModerationViolation(prompt) {
         }
     }
     return null;
+}
+
+/**
+ * Clone JSON-safe values.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function cloneJson(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Resolve cached fallback tier for admin authorization.
+ * @param {string} userId
+ * @returns {'free' | 'starter' | 'pro' | 'admin' | null}
+ */
+function getCachedAdminFallbackTier(userId) {
+    const entry = adminFallbackTierCache.get(userId);
+    if (!entry) {
+        return null;
+    }
+
+    if (entry.expiresAtMs <= Date.now()) {
+        adminFallbackTierCache.delete(userId);
+        return null;
+    }
+
+    return entry.tier;
+}
+
+/**
+ * Cache fallback tier for admin authorization.
+ * @param {{ userId: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
+ */
+function setCachedAdminFallbackTier({ userId, tier }) {
+    adminFallbackTierCache.set(userId, {
+        tier,
+        expiresAtMs: Date.now() + ADMIN_TIER_FALLBACK_CACHE_TTL_MS,
+    });
+}
+
+/**
+ * Invalidate cached fallback tier for one user.
+ * @param {string | undefined | null} userId
+ */
+function invalidateAdminFallbackTierCache(userId) {
+    if (typeof userId === 'string' && userId.trim().length > 0) {
+        adminFallbackTierCache.delete(userId);
+    }
+}
+
+/**
+ * Resolve `Retry-After` in seconds for free-tier emergency throttles.
+ * @param {Awaited<ReturnType<typeof getEmergencyMarginGuardState>>} state
+ * @returns {number}
+ */
+function resolveFreeTierThrottleRetryAfterSeconds(state) {
+    const nowMs = Date.now();
+    const cooldownUntilMs = new Date(state?.cooldownUntil || 0).getTime();
+    if (Number.isFinite(cooldownUntilMs) && cooldownUntilMs > nowMs) {
+        const secondsUntilCooldownEnds = Math.ceil((cooldownUntilMs - nowMs) / 1000);
+        return Math.max(
+            15,
+            Math.min(MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS, secondsUntilCooldownEnds),
+        );
+    }
+
+    return Math.max(
+        15,
+        Math.min(MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS, DEFAULT_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS),
+    );
+}
+
+/**
+ * Return whether JWT claims indicate admin access.
+ * @param {Record<string, any> | undefined} payload
+ * @returns {boolean}
+ */
+function hasAdminClaims(payload) {
+    if (!payload || typeof payload !== 'object') {
+        return false;
+    }
+
+    for (const claimKey of ADMIN_ROLE_CLAIM_KEYS) {
+        const claimValue = payload[claimKey];
+        if (Array.isArray(claimValue) && claimValue.some((entry) => String(entry || '').toLowerCase() === 'admin')) {
+            return true;
+        }
+    }
+
+    if (Array.isArray(payload.permissions)) {
+        const permissions = payload.permissions.map((entry) => String(entry || '').toLowerCase());
+        if (permissions.some((entry) => ADMIN_SCOPE_TOKENS.includes(entry))) {
+            return true;
+        }
+    }
+
+    if (typeof payload.scope === 'string') {
+        const scopes = payload.scope
+            .split(/\s+/)
+            .map((entry) => entry.trim().toLowerCase())
+            .filter((entry) => entry.length > 0);
+        if (scopes.some((entry) => ADMIN_SCOPE_TOKENS.includes(entry))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Require admin access for /admin routes.
+ */
+const requireAdminAccess = asyncHandler(async (req, res, next) => {
+    const authPayload = req.auth?.payload;
+    const userId = authPayload?.sub;
+    if (!userId) {
+        return res.status(401).json({ error: 'Authentication is required for admin access.' });
+    }
+
+    if (hasAdminClaims(authPayload)) {
+        return next();
+    }
+
+    const cachedFallbackTier = getCachedAdminFallbackTier(userId);
+    if (cachedFallbackTier === 'admin') {
+        return next();
+    }
+    if (cachedFallbackTier && cachedFallbackTier !== 'admin') {
+        return res.status(403).json({ error: 'Admin access is required.' });
+    }
+
+    const user = await getUserById({ userId });
+    const fallbackTier = resolveTier(user?.tier || 'free');
+    setCachedAdminFallbackTier({
+        userId,
+        tier: fallbackTier,
+    });
+    if (fallbackTier !== 'admin') {
+        return res.status(403).json({ error: 'Admin access is required.' });
+    }
+
+    return next();
+});
+
+/**
+ * Resolve numeric alert value for emergency-guard alerts.
+ * @param {Awaited<ReturnType<typeof getEmergencyMarginGuardState>>} state
+ * @returns {number}
+ */
+function getEmergencyGuardAlertValue(state) {
+    const marginPercent = Number(state?.triggerMetrics?.marginPercent);
+    if (Number.isFinite(marginPercent)) {
+        return marginPercent;
+    }
+    return Number(state?.triggerMetrics?.tokenBurnLastHourUsd) || 0;
+}
+
+/**
+ * Evaluate the global emergency margin guard using current economics + burn metrics.
+ * @param {{ force?: boolean, now?: Date }} [params]
+ * @returns {Promise<{
+ *   month: string | null,
+ *   marginPercent: number | null,
+ *   tokenBurnLastHourUsd: number,
+ *   state: Awaited<ReturnType<typeof getEmergencyMarginGuardState>>,
+ *   transition: { activated: boolean, deactivated: boolean, at: string, reasonCodes: string[] } | null,
+ * }>}
+ */
+async function evaluateCurrentEmergencyMarginGuard({ force = false, now = new Date() } = {}) {
+    const nowDate = new Date(now);
+    const nowMs = nowDate.getTime();
+    if (
+        !force &&
+        emergencyGuardEvaluationRuntime.lastResult &&
+        (nowMs - emergencyGuardEvaluationRuntime.lastEvaluatedAtMs) < EMERGENCY_GUARD_EVAL_CACHE_TTL_MS
+    ) {
+        return cloneJson(emergencyGuardEvaluationRuntime.lastResult);
+    }
+
+    if (!force && emergencyGuardEvaluationRuntime.inFlightPromise) {
+        return emergencyGuardEvaluationRuntime.inFlightPromise;
+    }
+
+    const evaluationPromise = (async () => {
+        try {
+            const [marginReport, opsSnapshot] = await Promise.all([
+                getMonthlyMarginReport({ now: nowDate }),
+                Promise.resolve(getOpsDashboardSnapshot()),
+            ]);
+            const marginPercent = typeof marginReport?.totals?.marginPercent === 'number'
+                ? marginReport.totals.marginPercent
+                : null;
+            const tokenBurnLastHourUsd = Number(opsSnapshot?.tokenBurnLastHourUsd) || 0;
+            const evaluation = await evaluateEmergencyMarginGuard({
+                marginPercent,
+                tokenBurnLastHourUsd,
+                force,
+                now: nowDate,
+            });
+
+            if (evaluation.transition) {
+                const from = evaluation.transition.activated ? 'NORMAL' : 'ACTIVE';
+                const to = evaluation.transition.activated ? 'ACTIVE' : 'NORMAL';
+                const reasonCodes = Array.isArray(evaluation.transition.reasonCodes) && evaluation.transition.reasonCodes.length > 0
+                    ? evaluation.transition.reasonCodes
+                    : ['none'];
+                const transitionLine = `GUARD_STATE_TRANSITION: ${from} -> ${to} reason=${reasonCodes.join(',')}`;
+                const transitionContext = {
+                    month: marginReport.month,
+                    from,
+                    to,
+                    reasonCodes,
+                    marginPercent,
+                    tokenBurnLastHourUsd,
+                    cooldownUntil: evaluation.state.cooldownUntil,
+                    recoveryStreak: evaluation.state.recoveryStreak,
+                };
+                if (evaluation.transition.activated) {
+                    logger.warn(transitionLine, transitionContext);
+                } else {
+                    logger.info(transitionLine, transitionContext);
+                }
+            }
+
+            const result = {
+                month: marginReport.month || null,
+                marginPercent,
+                tokenBurnLastHourUsd,
+                state: evaluation.state,
+                transition: evaluation.transition,
+            };
+
+            emergencyGuardEvaluationRuntime.lastResult = cloneJson(result);
+            emergencyGuardEvaluationRuntime.lastEvaluatedAtMs = Date.now();
+            return cloneJson(result);
+        } catch (error) {
+            logger.error(`Failed to evaluate emergency margin guard. ${error?.message || error}`, {
+                force,
+            });
+            const fallbackResult = {
+                month: null,
+                marginPercent: null,
+                tokenBurnLastHourUsd: Number(getOpsDashboardSnapshot().tokenBurnLastHourUsd) || 0,
+                state: await getEmergencyMarginGuardState(),
+                transition: null,
+            };
+            emergencyGuardEvaluationRuntime.lastResult = cloneJson(fallbackResult);
+            emergencyGuardEvaluationRuntime.lastEvaluatedAtMs = Date.now();
+            return cloneJson(fallbackResult);
+        }
+    })().finally(() => {
+        if (emergencyGuardEvaluationRuntime.inFlightPromise === evaluationPromise) {
+            emergencyGuardEvaluationRuntime.inFlightPromise = null;
+        }
+    });
+
+    if (!force) {
+        emergencyGuardEvaluationRuntime.inFlightPromise = evaluationPromise;
+    }
+
+    return evaluationPromise;
 }
 
 //rewrite urls from /api to /
@@ -474,7 +773,7 @@ app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
             name,
             auth0LoginId,
             picture, tier: 'pending',
-            createdAt: Timestamp.now()
+            createdAt: nowTimestamp()
         }
 
         const created = await createUser({ user });
@@ -516,6 +815,7 @@ app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
         }
 
         await updateUserTier({ userId, tier });
+        invalidateAdminFallbackTierCache(userId);
         if (fromTier !== tier) {
             await recordTierUpgrade({
                 userId,
@@ -544,7 +844,7 @@ app.post('/user/session/:sessionId/build', jwtCheck, asyncHandler(async (req, re
     try {
         const newBuild = {
             ...build,
-            createdAt: Timestamp.now()
+            createdAt: nowTimestamp()
         }
         const docRef = await createUsersBuild({ userId, build: newBuild });
 
@@ -555,7 +855,7 @@ app.post('/user/session/:sessionId/build', jwtCheck, asyncHandler(async (req, re
                 buildId: docRef.id,
                 ...build
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
 
@@ -583,7 +883,7 @@ app.put('/user/session/:sessionId/build/:buildId', jwtCheck, asyncHandler(async 
                 buildId,
                 ...build
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
 
@@ -613,7 +913,7 @@ app.post('/user/session/:sessionId/build/:buildId/steps', jwtCheck, asyncHandler
                 buildId,
                 steps: steps.length
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
         await addStepsToUsersBuild({ userId, buildId, steps });
@@ -642,7 +942,7 @@ app.post('/user/session/:sessionId/build/:buildId/logs', jwtCheck, asyncHandler(
                 buildId,
                 logs: logs.length
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
         await addLogsToUsersBuild({ userId, buildId, logs });
@@ -1080,7 +1380,7 @@ app.post('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => 
 
     const sessionStart = {
         ...session,
-        createdAt: Timestamp.now()
+        createdAt: nowTimestamp()
     }
 
     try {
@@ -1106,7 +1406,7 @@ app.put('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => {
 
     const sessionWithTimestamp = {
         ...session,
-        updatedAt: Timestamp.now()
+        updatedAt: nowTimestamp()
     }
 
     try {
@@ -1132,7 +1432,7 @@ app.post('/user/session/:sessionId/log', jwtCheck, asyncHandler(async (req, res)
         return res.status(400).json({ error: 'Missing userId, sessionId, or log' });
     }
 
-    const logWithTime = { ...log, timestamp: Timestamp.now() };
+    const logWithTime = { ...log, timestamp: nowTimestamp() };
 
     try {
         await addLogEntryToUsersSession({ userId, sessionId, log: logWithTime });
@@ -1151,13 +1451,9 @@ app.post('/stripe/create-checkout-session', jwtCheck, asyncHandler(async (req, r
 
     // Map SKU → Stripe product id
     const productMap = {
-        lite_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         starter_monthly: process.env.STRIPE_PRODUCT_ID_STARTER_TIER,
         pro_monthly: process.env.STRIPE_PRODUCT_ID_PRO_TIER,
-        pro_annual: process.env.STRIPE_PRODUCT_ID_PRO_ANNUAL,
         admin_monthly: process.env.STRIPE_PRODUCT_ID_ADMIN_TIER,
-        server_license_monthly: process.env.STRIPE_PRODUCT_ID_SERVER_LICENSE,
-        mega_build_pass: process.env.STRIPE_PRODUCT_ID_MEGA_BUILD_PASS,
     };
 
     const { username, tier, skuCode, termsVersion, privacyVersion } = req.body || {};
@@ -1257,6 +1553,7 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
     const user = await getUserById({ userId });
     const fromTier = resolveTier(user?.tier || 'free');
     await updateUserTier({ userId: user.id, tier: metadataTier });
+    invalidateAdminFallbackTierCache(userId);
     await recordTierUpgrade({
         userId,
         fromTier,
@@ -1313,6 +1610,42 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
         metadata: { tier },
     });
     const contextPreparationStartedAtMs = Date.now();
+    const emergencyGuardEvaluation = await evaluateCurrentEmergencyMarginGuard();
+    const emergencyGuardState = emergencyGuardEvaluation.state;
+
+    if (shouldThrottleFreeTier({ tier, guardState: emergencyGuardState })) {
+        const retryAfterSeconds = resolveFreeTierThrottleRetryAfterSeconds(emergencyGuardState);
+        await recordPreScaleRequestFailure({
+            userKey: usageKey,
+            tier,
+            capHit: true,
+            concurrencyRejected: false,
+            latencyMs: Date.now() - requestStartedAtMs,
+            queueWaitMs: Date.now() - contextPreparationStartedAtMs,
+        });
+        recordAbuseSignal({
+            userKey: usageKey,
+            channel: 'api',
+            signal: 'emergency_guard_free_tier_throttle',
+            severity: 'medium',
+            metadata: {
+                tier,
+                reasonCodes: emergencyGuardState.reasonCodes,
+            },
+        });
+        res.set('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({
+            code: FREE_TIER_THROTTLE_ERROR_CODE,
+            error: 'Free tier is temporarily throttled due to emergency capacity protection. Upgrade to Starter, Pro, or Admin for continued access.',
+            retryAfterSeconds,
+            upgradeSuggested: true,
+            emergencyGuard: {
+                active: emergencyGuardState.active,
+                reason: emergencyGuardState.reason,
+                reasonCodes: emergencyGuardState.reasonCodes,
+            },
+        });
+    }
 
     if (!tierFeaturePolicy.allowBuilds) {
         await recordPreScaleRequestFailure({
@@ -1397,6 +1730,7 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     } = prepareContextForSnapshot({
         usageKey,
         context,
+        forceThinSnapshot: shouldForceThinSnapshots({ guardState: emergencyGuardState }),
     });
     const contextSnapshot = buildContextSnapshot({
         context: contextForSnapshot,
@@ -1842,6 +2176,15 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
                 },
                 marginAlertsTriggered: marginAlerts.triggered.length,
                 contextDiagnostics,
+                emergencyGuard: {
+                    active: emergencyGuardState.active,
+                    reason: emergencyGuardState.reason,
+                    reasonCodes: emergencyGuardState.reasonCodes,
+                    source: emergencyGuardState.source,
+                    throttleFreeTier: emergencyGuardState.throttleFreeTier,
+                    forceThinSnapshots: emergencyGuardState.forceThinSnapshots,
+                    lastEvaluatedAt: emergencyGuardState.lastEvaluatedAt,
+                },
             },
         });
     } catch (err) {
@@ -1885,6 +2228,11 @@ ${canaryVariantEnabled ? '- Add one explicit high-level safety tag in `tags`.' :
         return res.status(500).json({ error: 'Failed to generate structure. Please try again.' });
     }
 }));
+
+/**
+ * Lock all admin routes with JWT auth + admin authorization.
+ */
+app.use('/admin', jwtCheck, requireAdminAccess);
 
 /**
  * Return per-tier usage metering rows for a month.
@@ -1935,11 +2283,28 @@ app.get('/admin/pre-scale-telemetry', asyncHandler(async (req, res) => {
     const marginByTier = Object.fromEntries(
         marginRows.map((row) => [row.tier, { revenue: row.revenue, totalCost: row.totalCost }]),
     );
+    const [dashboard, emergencyGuard] = await Promise.all([
+        getPreScaleTelemetryDashboard({
+            month,
+            marginByTier,
+        }),
+        evaluateCurrentEmergencyMarginGuard(),
+    ]);
 
-    return res.json(await getPreScaleTelemetryDashboard({
-        month,
-        marginByTier,
-    }));
+    return res.json({
+        ...dashboard,
+        guard_state_effective: {
+            active: emergencyGuard.state.active,
+            source: emergencyGuard.state.source,
+            reason: emergencyGuard.state.reason,
+            reasonCodes: emergencyGuard.state.reasonCodes,
+            throttleFreeTier: emergencyGuard.state.throttleFreeTier,
+            forceThinSnapshots: emergencyGuard.state.forceThinSnapshots,
+            cooldownUntil: emergencyGuard.state.cooldownUntil,
+            recoveryStreak: emergencyGuard.state.recoveryStreak,
+            lastEvaluatedAt: emergencyGuard.state.lastEvaluatedAt,
+        },
+    });
 }));
 
 /**
@@ -1987,12 +2352,14 @@ app.post('/admin/pre-scale/simulate', asyncHandler(async (req, res) => {
         requestsPerUser,
         tiers,
     } = req.body || {};
+    const emergencyGuard = await evaluateCurrentEmergencyMarginGuard();
 
     return res.json(runPreScaleSimulation({
         seed,
         concurrentUsers,
         requestsPerUser,
         tiers,
+        guardState: emergencyGuard.state,
     }));
 }));
 
@@ -2033,14 +2400,89 @@ app.get('/admin/ops-dashboard', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * Return current emergency margin guard state.
+ */
+app.get('/admin/emergency-guard', asyncHandler(async (req, res) => {
+    const evaluation = await evaluateCurrentEmergencyMarginGuard({ force: true });
+    return res.json(evaluation);
+}));
+
+/**
+ * Set, clear, or time-box emergency margin guard manual override.
+ */
+app.post('/admin/emergency-guard/override', asyncHandler(async (req, res) => {
+    const {
+        mode,
+        reason,
+        actor,
+        durationMinutes,
+        confirmationCode,
+    } = req.body || {};
+    const adminUserId = req.auth?.payload?.sub || null;
+    const resolvedActor = typeof actor === 'string' && actor.trim().length > 0
+        ? actor.trim()
+        : adminUserId;
+
+    if (mode === 'force_off' && confirmationCode !== EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE) {
+        return res.status(400).json({
+            error: `force_off requires explicit confirmationCode="${EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE}".`,
+        });
+    }
+
+    try {
+        const nextState = await setEmergencyMarginGuardManualOverride({
+            mode,
+            reason,
+            actor: resolvedActor,
+            durationMinutes,
+        });
+        recordSecurityAuditEvent({
+            type: 'emergency_guard_override',
+            severity: mode === 'force_off' ? 'warning' : 'info',
+            userKey: adminUserId || 'admin:unknown',
+            tier: 'admin',
+            message: `Emergency guard override ${String(mode || 'unknown')} by ${resolvedActor || 'unknown-admin'}.`,
+            context: {
+                mode,
+                reason: typeof reason === 'string' ? reason : null,
+                durationMinutes: Number.isFinite(Number(durationMinutes)) ? Number(durationMinutes) : null,
+                expiresAt: nextState.manualOverride?.expiresAt || null,
+                confirmationCodeAccepted: mode === 'force_off',
+            },
+        });
+    } catch (error) {
+        return res.status(400).json({
+            error: error.message || 'Invalid emergency guard override request.',
+        });
+    }
+
+    const evaluation = await evaluateCurrentEmergencyMarginGuard({ force: true });
+    return res.json(evaluation);
+}));
+
+/**
  * Return operations alerts derived from request/failure metrics.
  */
 app.get('/admin/ops-alerts', asyncHandler(async (req, res) => {
     const evaluation = evaluateOpsAlerts();
-    const incidents = evaluateIncidentNotifications({ alerts: evaluation.alerts });
+    const emergencyGuard = await evaluateCurrentEmergencyMarginGuard();
+    const alerts = [...evaluation.alerts];
+
+    if (emergencyGuard.state.active) {
+        alerts.push({
+            level: 'error',
+            code: 'emergency_margin_guard_active',
+            message: emergencyGuard.state.reason || 'Emergency margin guard is active.',
+            value: getEmergencyGuardAlertValue(emergencyGuard.state),
+        });
+    }
+
+    const incidents = evaluateIncidentNotifications({ alerts });
     return res.json({
         ...evaluation,
+        alerts,
         incidents,
+        emergencyGuard,
     });
 }));
 
@@ -2204,6 +2646,21 @@ app.use(asyncHandler(async (req, res, next) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
+    const status = Number(err?.status || err?.statusCode || 0);
+    if (status === 401 || err?.name === 'UnauthorizedError' || err?.name === 'InvalidTokenError') {
+        return res.status(401).json({
+            error: 'Unauthorized',
+            message: err?.message || 'Missing or invalid access token.',
+        });
+    }
+
+    if (status === 403 || err?.name === 'InsufficientScopeError') {
+        return res.status(403).json({
+            error: 'Forbidden',
+            message: err?.message || 'Insufficient permissions.',
+        });
+    }
+
     console.error('💥 Uncaught error:', err.stack || err);
     res.status(500).json({ error: 'Internal server error' });
 });

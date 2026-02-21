@@ -1,20 +1,20 @@
 # Pre-Scale Stabilization Phase
 ## Minecraft AI Agent – Execution Order Plan
 
-Last updated: **2026-02-20**
+Last updated: **2026-02-21**
 Execution status: **Implementation pass completed in-code where feasible in this repository**
 
 Purpose: Stabilize economics, reliability, and operational visibility before aggressive marketing or scale push.
 
 ---
 
-## Status Summary (2026-02-20)
+## Status Summary (2026-02-21)
 - [x] Phase 1: Persistent Economics & Usage Integrity (P0)
 - [x] Phase 2: Real-World Telemetry & Visibility (P0)
 - [x] Phase 3: Stress & Abuse Hardening (P0)
 - [x] Phase 4: Performance & Latency Profiling (P1)
 - [x] Phase 5: Conversion Instrumentation (P1)
-- [x] Phase 6: Server License Packaging Definition (P1)
+- [x] Phase 6: Monthly SKU Baseline Definition (P1)
 - [ ] Phase 7: Marketing Amplification (P2) (partial implementation; blockers documented below)
 
 ---
@@ -80,7 +80,34 @@ Metrics returned by `POST /admin/pre-scale/simulate` and history at `GET /admin/
 - [x] Token burn spikes
 - [x] Failure rates
 
+Deterministic 3-scenario guard shakeout CLI:
+- [x] `npm --prefix apps/api run pre-scale:shakeout` (normal / active / recovery with validation assertions)
+
 Goal: Break the system before users do.
+
+### 3.1 Global Emergency Margin Guard
+Implemented via `apps/api/utils/emergency-margin-guard.js` and integrated in `apps/api/index.js`.
+
+- [x] Emergency margin guard (auto throttle + force-thin + admin override + alert + playbook)
+- [x] Auto-evaluate guard on live economics (`monthly_margin < threshold` OR `token_burn_rate > threshold`)
+- [x] Conservative default thresholds enabled for initial traffic (`margin=45%`, `burn=$3/hr`, `cooldown=20m`, cached eval `45s`)
+- [x] Periodic persistence re-sync for multi-instance convergence (per-process in-memory cache + persistence refresh window)
+- [x] Auto-throttle Free tier request path during active guard state
+- [x] Force thin snapshots while guard is active (temporarily disables thick snapshots)
+- [x] Persist guard state/overrides to pre-scale persistence layer (`emergencyGuard` collection key)
+- [x] Add admin visibility + control endpoints:
+  - `GET /admin/emergency-guard`
+  - `POST /admin/emergency-guard/override` (`force_on` / `force_off` / `clear`)
+- [x] Lock `/admin/emergency-guard`, `/admin/emergency-guard/override`, and `/admin/ops-alerts` behind JWT + admin authorization middleware
+- [x] Harden admin fallback tier check cache with bounded TTL (`30-120s`) and invalidate on tier changes (`/user/plan`, `/stripe/confirm-checkout`)
+- [x] Surface active guard alert in `GET /admin/ops-alerts` (`emergency_margin_guard_active`)
+- [x] Emit stable transition log line on state changes (`GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`)
+- [x] Include `guard_state_effective` in `GET /admin/pre-scale-telemetry` payload for operations context
+- [x] Return stable free-tier guard throttle contract (`429` + `Retry-After` + `code=FREE_TIER_THROTTLED_GUARD_ACTIVE`)
+- [x] Attach incident playbook for guard activation (`emergency_margin_guard_active` in `apps/api/utils/incident-manager.js`)
+- [x] Guard enforcement coverage verified across primary request path retries and admin simulation path (no separate queue worker path present in-repo)
+
+Goal: Provide a fail-safe margin breaker that protects economics during abnormal burn or margin collapse.
 
 ---
 
@@ -104,10 +131,9 @@ Goal: Ensure interactive responsiveness under real usage.
 ### 5. Funnel & Upgrade Tracking
 Implemented via `apps/api/utils/conversion-funnel.js` and endpoint `GET /admin/conversion-funnel`.
 
-- [x] Free → Lite conversion %
-- [x] Lite → Pro conversion %
-- [x] Pro → Server License conversion %
-- [x] Mega Build Pass purchase %
+- [x] Free → Starter conversion %
+- [x] Starter → Pro conversion %
+- [x] Pro → Admin conversion %
 - [x] Upgrade time-to-conversion
 - [x] Feature usage before upgrade
 
@@ -122,26 +148,17 @@ Goal: Understand monetization mechanics before scaling traffic.
 
 ---
 
-## Phase 6: Server License Packaging Definition (P1)
+## Phase 6: Monthly SKU Baseline Definition (P1)
 
-### 6. Server License SKU Hardening
+### 6. Monthly SKU Hardening
 Implemented in `apps/api/config/sku-catalog.js` and checkout mapping in `apps/api/index.js`.
 
-- [x] Multi-user rights
-- [x] Priority inference pool access
-- [x] Higher concurrency limits
-- [x] Shared build library access
-- [x] Persistent world memo features
-- [x] Automation/batch job unlocks
-- [x] Admin dashboard capabilities
+- [x] Keep canonical monthly SKUs only (`starter_monthly`, `pro_monthly`, `admin_monthly`)
+- [x] Remove expanded non-monthly/renamed SKU set and keep monthly baseline only
+- [x] Keep checkout SKU-to-Stripe mapping aligned to monthly baseline only
+- [x] Keep Starter/Pro/Admin plan naming consistent in user-facing selector
 
-Additional SKU coverage implemented:
-- [x] Lite Monthly (`lite_monthly`)
-- [x] Pro Annual (`pro_annual`)
-- [x] Server License Monthly (`server_license_monthly`)
-- [x] Mega Build Pass (`mega_build_pass`)
-
-Goal: Position Server License as infrastructure, not just a subscription.
+Goal: Keep plan catalog clear, stable, and easy to understand.
 
 ---
 
@@ -157,8 +174,8 @@ Goal: Position Server License as infrastructure, not just a subscription.
 
 Goal: Market defensibility and engineering rigor, not just features.
 
-### Blockers / Issues (2026-02-20)
-- [x] Pricing surface renamed to Lite in in-app plan selector (`apps/webui/src/components/PlanSelector.jsx`).
+### Blockers / Issues (2026-02-21)
+- [x] Plan selector naming reverted to Starter (`apps/webui/src/components/PlanSelector.jsx`).
 - [ ] Dedicated public marketing site app/surface is not present in this repository (current Web UI is auth-gated dashboard-first).
 - [ ] Demo GIF and screenshot assets were not available in-repo for direct integration.
 - [ ] Marketing copy/art direction finalization requires product/marketing asset pass.
@@ -193,9 +210,10 @@ Pre-scale stabilization is complete when:
 - [x] Economics persist across restarts
 - [x] Live telemetry validates margin assumptions
 - [x] System survives synthetic abuse testing
+- [x] Global emergency margin guard can auto-throttle and force thin context mode
 - [x] Latency is measurable with target profiles (P50/P95/P99 + cold-start/throughput)
 - [x] Conversion funnel is measurable
-- [x] Server license positioning is clearly defined
+- [x] Monthly SKU baseline (Starter/Pro/Admin) is clearly defined
 - [ ] Marketing amplification assets/site pass is complete (blocked items above)
 
 Only then should large-scale marketing expansion begin.

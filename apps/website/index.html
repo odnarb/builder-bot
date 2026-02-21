@@ -4,79 +4,246 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Minecraft AI Builder</title>
+    <title>BuilderBot | Minecraft AI Builder</title>
     <link rel="icon" href="logo.png" type="image/png" />
     <link rel="stylesheet" href="styles.css" />
 </head>
 
-<body>
-    <header>
-        <img src="logo.png" alt="Minecraft AI Builder Logo" />
-        <h1>🤖 Minecraft AI Builder</h1>
-        <p><strong>Build with AI-powered commands inside Minecraft!</strong><br>
-            This mod brings your ideas to life through intelligent structure generation — just type what you want to
-            build, and the AI translates your prompt into blocks.</p>
+<body id="top">
+    <header class="panel" style="max-width: 1140px; margin: 1rem auto 0; padding: 0.85rem 1.25rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+        <a href="#top" style="display: flex; align-items: center; gap: 0.65rem; text-decoration: none; font-weight: 700;">
+            <img src="logo.png" alt="BuilderBot logo" style="width: 36px; height: 36px; border-radius: 9px; border: 1px solid rgba(131, 218, 250, 0.24);" />
+            <span>BuilderBot</span>
+        </a>
+        <nav aria-label="Primary" style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.9rem; font-size: 0.92rem; color: #cfe4f7;">
+            <a href="#how-it-works">How it Works</a>
+            <a href="#builds">Builds</a>
+            <a href="#plans">Plans</a>
+            <a href="#parents">Parents</a>
+            <a href="#install">Install</a>
+            <a href="https://discord.gg/mcbuilderbot" target="_blank" rel="noreferrer">Discord</a>
+        </nav>
     </header>
 
-    <main>
-        <section>
-            <h2>🆓 Free Tier Features</h2>
-            <ul>
-                <li>✅ Use AI to generate builds from natural language (e.g., “build a stone house with windows”)</li>
-                <li>✅ Supports <strong>up to 50 blocks</strong> per build</li>
-                <li>✅ WebUI & In-game chat-driven command system</li>
-                <li>✅ Works in <strong>singleplayer and multiplayer</strong></li>
-                <li>✅ No account or payment required</li>
-            </ul>
-        </section>
-
-        <section>
-            <h2>🚀 Want to Build Bigger?</h2>
-            <ul>
-                <li>🔓 Remove block limit (build 500+, 1000+, or unlimited blocks)</li>
-                <li>💡 Access advanced AI tuning and custom presets</li>
-                <li>🤝 Share Builds with Friends</li>
-                <li>📜 View your build history and saved plans</li>
-                <li>📈 Priority support</li>
-                <li>~~🧠 Discord integration~~ (some day)</li>
-            </ul>
-            <p><em>The free version is fully functional and gives you access to the AI system. No features are locked
-                    behind a paywall — premium upgrades are optional for larger-scale builds and extended features.</em>
+    <section class="hero">
+        <div class="hero-content">
+            <p class="eyebrow">Minecraft Building Buddy</p>
+            <h1>Type it. BuilderBot builds it.</h1>
+            <p class="subtitle">
+                Tell BuilderBot what to build. It makes a safe plan and builds step-by-step.
             </p>
-        </section>
-
-        <section>
-            <h2>⚠️ Requirements</h2>
-            <ul>
-                <li>🔓 Cheats enabled</li>
-                <li>🛡️ OP permissions for /give</li>
-                <li>🎨 Creative mode access (until survival support is added)</li>
-            </ul>
-        </section>
-
-        <section>
-            <h2>📦 Installation</h2>
-            <ol>
-                <li>Requires Forge + any required dependencies</li>
-                <li>Drop this mod into your <code>mods</code> folder (really anywhere on the computer should work)</li>
-                <li>Launch the BuilderBot dashboard, get your bot to connect to your Minecraft server</li>
-                <li>Give build commands from the UI!</li>
-            </ol>
-        </section>
-
-        <section>
-            <h2>❓Need Help?</h2>
-            <ul>
-                <li><a href="https://discord.gg/mcbuilderbot" target="_blank">Join our Discord Community</a></li>
-            </ul>
-        </section>
-
-        <div class="buttons">
-            <a href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank">🧩 View
-                onCurseForge</a>
-            <a href="https://discord.gg/mcbuilderbot" target="_blank">💬 Join Discord</a>
+            <div class="hero-actions">
+                <a class="button primary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank"
+                    rel="noreferrer">Get BuilderBot (CurseForge)</a>
+                <a class="button secondary" href="#demo">Watch Demo</a>
+            </div>
         </div>
+        <div class="hero-logo">
+            <img src="logo.png" alt="BuilderBot logo" />
+        </div>
+    </section>
+
+    <main class="page">
+        <section id="how-it-works" class="panel">
+            <h2>How It Works</h2>
+            <p>From one sentence to a finished build in three easy steps.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.8rem;">
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1.05rem;">Ask for a build</h3>
+                    <p style="margin: 0; color: var(--muted);">"Build a stone tower with windows."</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1.05rem;">BuilderBot makes a plan</h3>
+                    <p style="margin: 0; color: var(--muted);">It figures out steps before placing blocks.</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1.05rem;">It builds safely</h3>
+                    <p style="margin: 0; color: var(--muted);">Limits and checks help keep builds controlled.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="builds" class="panel">
+            <h2>What Can I Build?</h2>
+            <p>Pick an idea and let BuilderBot do the block-by-block work.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.75rem;">
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Treehouse build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Treehouse</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Castle gate build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Castle gate</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Stone bridge build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Stone bridge</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Starter house build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Starter house</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Watchtower build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Watchtower</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Village path build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Village path</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Farm and barn build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Farm and barn</figcaption>
+                </figure>
+                <figure class="demo-wrap" style="margin: 0;">
+                    <img src="logo.png" alt="Snow base build example" style="width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; margin-bottom: 0.5rem;" />
+                    <figcaption>Snow base</figcaption>
+                </figure>
+            </div>
+        </section>
+
+        <section id="plans" class="panel">
+            <h2>Plans</h2>
+            <p>Simple monthly plans with clear caps. Upgrade only when your builds outgrow your current plan.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.8rem;">
+                <article class="demo-wrap compact">
+                    <p class="eyebrow" style="margin-bottom: 0.55rem;">Try it</p>
+                    <h3 style="margin: 0 0 0.45rem;">Free - $0/mo</h3>
+                    <ul>
+                        <li>Up to 100 build requests per month</li>
+                        <li>Concurrency: 1 request at a time</li>
+                        <li>Command blocks: No</li>
+                    </ul>
+                    <a class="button secondary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank" rel="noreferrer">Start Free</a>
+                </article>
+                <article class="demo-wrap compact">
+                    <p class="eyebrow" style="margin-bottom: 0.55rem;">Everyday builds</p>
+                    <h3 style="margin: 0 0 0.45rem;">Starter - $4.99/mo</h3>
+                    <ul>
+                        <li>Up to 1,000 build requests per month</li>
+                        <li>Concurrency: 2 requests at a time</li>
+                        <li>Command blocks: No</li>
+                    </ul>
+                    <a class="button primary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank" rel="noreferrer">Choose Starter</a>
+                </article>
+                <article class="demo-wrap compact">
+                    <p class="eyebrow" style="margin-bottom: 0.55rem;">Big builds</p>
+                    <h3 style="margin: 0 0 0.45rem;">Pro - $12.99/mo</h3>
+                    <ul>
+                        <li>Up to 5,000 build requests per month</li>
+                        <li>Concurrency: 4 requests at a time</li>
+                        <li>Command blocks: Yes</li>
+                    </ul>
+                    <a class="button secondary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank" rel="noreferrer">Go Pro</a>
+                </article>
+                <article class="demo-wrap compact">
+                    <p class="eyebrow" style="margin-bottom: 0.55rem;">Servers and power users</p>
+                    <h3 style="margin: 0 0 0.45rem;">Admin - $24.99/mo</h3>
+                    <ul>
+                        <li>Up to 15,000 build requests per month</li>
+                        <li>Concurrency: 8 requests at a time</li>
+                        <li>Command blocks: Yes</li>
+                    </ul>
+                    <a class="button secondary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank" rel="noreferrer">Choose Admin</a>
+                </article>
+            </div>
+        </section>
+
+        <section id="parents" class="panel compact">
+            <h2>Parents: Safety and control</h2>
+            <ul>
+                <li>Build limits prevent huge runaway builds</li>
+                <li>Plans are capped, with no unlimited surprises</li>
+                <li>Works best with adult or server owner setup</li>
+                <li>Upgrade only if your child keeps hitting limits</li>
+            </ul>
+            <p><strong>Start Free, upgrade when builds feel too small.</strong></p>
+        </section>
+
+        <section id="demo" class="panel">
+            <h2>Watch BuilderBot in Action</h2>
+            <p>See how quickly a simple prompt turns into a finished Minecraft build.</p>
+            <div class="demo-wrap">
+                <video controls preload="metadata" poster="logo.png">
+                    <source src="demo.mp4" type="video/mp4" />
+                    Your browser does not support embedded video.
+                </video>
+            </div>
+        </section>
+
+        <section id="install" class="panel">
+            <h2>Install</h2>
+            <p>Quick setup for players, plus permission guidance for server owners.</p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.8rem;">
+                <div class="demo-wrap compact">
+                    <h3 style="margin-top: 0;">Quick Start</h3>
+                    <ol>
+                        <li>Install Forge and required dependencies</li>
+                        <li>Drop BuilderBot into your <code>mods</code> folder</li>
+                        <li>Launch Minecraft</li>
+                        <li>Open the dashboard</li>
+                        <li>Connect and start building</li>
+                    </ol>
+                </div>
+                <div class="demo-wrap compact">
+                    <h3 style="margin-top: 0;">Best Results</h3>
+                    <ul>
+                        <li>Cheats enabled</li>
+                        <li>Creative mode recommended</li>
+                        <li>Operator permissions for advanced actions</li>
+                    </ul>
+                </div>
+            </div>
+            <p><strong>Parent hint:</strong> Ask an adult or server owner to help with setup.</p>
+        </section>
+
+        <section id="faq" class="panel">
+            <h2>FAQ</h2>
+            <div style="display: grid; gap: 0.65rem;">
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">Can I use it for free?</h3>
+                    <p style="margin: 0; color: var(--muted);">Yes. The Free plan includes up to 100 build requests each month.</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">Is it safe for kids?</h3>
+                    <p style="margin: 0; color: var(--muted);">It uses limits and checks to keep builds controlled, and setup works best with adult help.</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">When should I upgrade?</h3>
+                    <p style="margin: 0; color: var(--muted);">Upgrade when your monthly build requests keep hitting your current plan cap.</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">Do I need operator permissions?</h3>
+                    <p style="margin: 0; color: var(--muted);">For advanced actions, yes. Basic testing can start without full server-level control.</p>
+                </article>
+                <article class="demo-wrap">
+                    <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">What are command blocks?</h3>
+                    <p style="margin: 0; color: var(--muted);">They are advanced automation tools in Minecraft used for more powerful scripted behavior.</p>
+                </article>
+            </div>
+        </section>
+
+        <section id="privacy" class="panel compact">
+            <h2>Privacy</h2>
+            <p>BuilderBot uses data needed to process build requests and improve reliability. We do not sell personal data.</p>
+        </section>
+
+        <section id="terms" class="panel compact">
+            <h2>Terms</h2>
+            <p>Use BuilderBot on worlds and servers you control, and follow your server rules. Adult or server owner setup is recommended.</p>
+        </section>
     </main>
+
+    <footer class="footer">
+        <p>BuilderBot for players, parents, and server owners.</p>
+        <div class="hero-actions">
+            <a class="button secondary" href="https://discord.gg/mcbuilderbot" target="_blank" rel="noreferrer">Discord</a>
+            <a class="button secondary" href="https://legacy.curseforge.com/minecraft/mc-addons/builderbot" target="_blank" rel="noreferrer">CurseForge</a>
+            <a class="button secondary" href="https://discord.gg/mcbuilderbot" target="_blank" rel="noreferrer">Support/Contact</a>
+            <a class="button secondary" href="#privacy">Privacy</a>
+            <a class="button secondary" href="#terms">Terms</a>
+        </div>
+    </footer>
 </body>
 
 </html>

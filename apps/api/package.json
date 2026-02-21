@@ -4,7 +4,8 @@
     "main": "index.js",
     "scripts": {
         "dev": "cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json node server.js",
-        "pre-scale:simulate": "node scripts/run-pre-scale-simulation.js"
+        "pre-scale:simulate": "node scripts/run-pre-scale-simulation.js",
+        "pre-scale:shakeout": "node scripts/run-emergency-guard-shakeout.js"
     },
     "dependencies": {
         "@google-cloud/firestore": "^7.11.3",

@@ -54,6 +54,14 @@ app.whenReady().then(() => {
 
 const envVars = {}
 
+async function safeEndSession(session, context = 'unknown') {
+    try {
+        await endSession({ envVars, session });
+    } catch (error) {
+        console.warn(`⚠️ Could not persist end session (${context}): ${error.message}`);
+    }
+}
+
 // ✅ Listen for bot launch from UI
 ipcMain.on('launch-bot', (event, env) => {
     if (botProcess) {
@@ -89,7 +97,7 @@ ipcMain.on('launch-bot', (event, env) => {
 
     botProcess.on('close', async (code) => {
         console.log(`👋 Bot process exited with code ${code}`);
-        await endSession({ envVars, session: { exit_code: code } })
+        await safeEndSession({ exit_code: code }, 'child_process.close');
         event.sender.send('bot-status', { status: 'exited', code });
         botProcess = null;
     });
@@ -104,7 +112,7 @@ ipcMain.on('launch-bot', (event, env) => {
             error_message: err.message,
             exit_code: -1
         }
-        await endSession({ envVars, session })
+        await safeEndSession(session, 'child_process.error');
 
         event.sender.send('bot-status', { status: 'exited', code: -1 });
         botProcess = null;
@@ -121,7 +129,7 @@ ipcMain.on('stop-bot', async (event) => {
             exit_reason: 'process stopped manually',
             exit_code: 0
         }
-        await endSession({ envVars, session })
+        await safeEndSession(session, 'ipc.stop-bot');
     } else {
         console.log('⚠️ No bot process to stop.');
     }
@@ -142,6 +150,6 @@ ipcMain.on('window:close', async () => {
         exit_reason: 'process stopped manually',
         exit_code: 0
     }
-    await endSession({ envVars, session })
+    await safeEndSession(session, 'ipc.window-close');
     BrowserWindow.getFocusedWindow()?.close();
 });

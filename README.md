@@ -23,12 +23,35 @@ java -Xmx2G -jar paper-1.20.4-499.jar
 ```bash
 npm --prefix apps/api run dev
 ```
-3. Start bot:
+3. Get an Auth0 access token for local bot API calls:
+```bash
+npm --prefix apps/webui run dev
+```
+- Open `http://localhost:5173` and log in.
+- In browser DevTools -> Network, open a request like `/api/user/tier`.
+- Copy the `Authorization` header token (`Bearer <token>`).
+- Export it in your shell:
+```bash
+export AUTH_TOKEN='<paste token here>'
+```
+- Token must be minted for audience `https://api.mcbuilderbot.com`.
+
+4. Choose one bot launch mode:
+
+Mode A: Start bot from terminal
 ```bash
 npm run dev:bot
 ```
 
-4. Optional CLI build prompt flow:
+Mode B: Start bot from the Web UI Launch button (Electron only)
+```bash
+npm --prefix apps/webui run dev
+npm run dev:electron
+```
+- Open the Electron app window and click **Launch BuilderBot**.
+- The Launch/Stop buttons use Electron IPC and do not work in plain browser mode.
+
+5. Optional CLI build prompt flow:
 ```bash
 npm run dev -- "build a cobblestone tower" --schematic
 ```
@@ -42,10 +65,26 @@ npm --prefix apps/webui run dev
 ```bash
 npm run dev:electron
 ```
+- Start static marketing site from `apps/website` (public landing surface):
+```bash
+python3 -m http.server 8080 --directory apps/website
+```
 
 ## Tests
 ```bash
 npm test
+```
+
+## Ops Hardening
+- Emergency guard now emits transition logs on state changes:
+  - `GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`
+- Free-tier emergency throttles return stable API semantics:
+  - `429` with `Retry-After` header
+  - response `code: "FREE_TIER_THROTTLED_GUARD_ACTIVE"`
+- Pre-scale telemetry now includes `guard_state_effective` for current guard status.
+- Run deterministic normal/active/recovery shakeout:
+```bash
+npm --prefix apps/api run pre-scale:shakeout
 ```
 
 ## New API Surfaces (Monolithic Cloud Run)

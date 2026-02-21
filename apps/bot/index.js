@@ -20,19 +20,36 @@ const BOT_NAME = process.env.BOT_NAME || 'BuilderBot'
 //for disallowing multiple commands to be in flight
 let handlingCommand = false
 
-//start the session on the backend for logging
-await createSession({
-  session: {
-    commanderUUID: COMMANDER_UUID,
-    hostIp: MC_HOST_IP,
-    hostPort: MC_HOST_PORT,
-    hostVersion: MC_HOST_VERSION,
-    botName: BOT_NAME
+async function safeAddLogEntry(log) {
+  try {
+    await addLogEntry(log);
+  } catch (error) {
+    console.warn(`⚠️ Could not persist bot log entry: ${error.message}`);
   }
-})
+}
+
+//start the session on the backend for logging
+try {
+  await createSession({
+    session: {
+      commanderUUID: COMMANDER_UUID,
+      hostIp: MC_HOST_IP,
+      hostPort: MC_HOST_PORT,
+      hostVersion: MC_HOST_VERSION,
+      botName: BOT_NAME
+    }
+  });
+} catch (error) {
+  console.warn(`⚠️ Could not create API session. Continuing without remote session logging. ${error.message}`);
+}
 
 //Get user tier information before starting bot
-const tierData = await getUserTier()
+let tierData = { tier: 'free' };
+try {
+  tierData = await getUserTier();
+} catch (error) {
+  console.warn(`⚠️ Could not fetch user tier. Defaulting to free tier. ${error.message}`);
+}
 
 //get user's tier and create the commander object
 const commander = {
@@ -86,7 +103,7 @@ bot.on('chat', async (username, message) => {
     //Allowing command
     console.log(`Allowing "${finalMessage}" from ${username}`)
 
-    addLogEntry({ type: "chat", message, from: username, level: 0 })
+    void safeAddLogEntry({ type: "chat", message, from: username, level: 0 });
 
     //TODO: update state that lets the webUI know so that commands can't be spammed
     // handlingCommand = true
@@ -105,18 +122,18 @@ bot.on('chat', async (username, message) => {
 
 bot.on('error', async (err) => {
   console.log(`Got error from bot: ${err.stack}`)
-  await addLogEntry({ type: "error", message: 'Got error from bot', data: err.stack, level: 2 })
+  await safeAddLogEntry({ type: "error", message: 'Got error from bot', data: err.stack, level: 2 });
   process.exit(-1)
 })
 
 bot.on('kicked', async (reason, loggedIn) => {
   console.log(`Bot kicked:`, reason);
-  await addLogEntry({ type: "error", message: 'Bot kicked from server', data: { reason, loggedIn }, level: 1 })
+  await safeAddLogEntry({ type: "error", message: 'Bot kicked from server', data: { reason, loggedIn }, level: 1 });
   process.exit(-1)
 })
 
 bot.on('end', async (reason) => {
   console.log(`Bot disconnected..`, reason);
-  await addLogEntry({ type: "error", message: 'Bot disconnected from server', data: { reason }, level: 1 })
+  await safeAddLogEntry({ type: "error", message: 'Bot disconnected from server', data: { reason }, level: 1 });
   process.exit(-1)
 });

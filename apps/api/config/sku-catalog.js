@@ -1,20 +1,18 @@
 const SUBSCRIPTION = 'subscription';
-const ONE_TIME = 'one_time';
 
 /**
  * Canonical sellable SKU catalog.
- * Includes active monthly, annual, and one-time SKUs.
+ * Baseline monthly plans only.
  */
 export const SKU_CATALOG = Object.freeze({
-    lite_monthly: Object.freeze({
-        code: 'lite_monthly',
-        legacyCodes: ['starter_monthly'],
-        name: 'Lite Monthly',
+    starter_monthly: Object.freeze({
+        code: 'starter_monthly',
+        name: 'Starter Monthly',
         kind: SUBSCRIPTION,
         tier: 'starter',
         billingPeriod: 'monthly',
         priceUsd: 4.99,
-        description: 'Lite tier with core build automation and balanced usage limits.',
+        description: 'Starter tier with core build automation and balanced usage limits.',
         capabilities: Object.freeze({
             multiUserRights: false,
             priorityInferencePool: false,
@@ -24,24 +22,6 @@ export const SKU_CATALOG = Object.freeze({
             adminDashboard: false,
         }),
         active: true,
-    }),
-    starter_monthly: Object.freeze({
-        code: 'starter_monthly',
-        name: 'Starter Monthly (Legacy Alias)',
-        kind: SUBSCRIPTION,
-        tier: 'starter',
-        billingPeriod: 'monthly',
-        priceUsd: 4.99,
-        description: 'Legacy alias for Lite Monthly checkout compatibility.',
-        capabilities: Object.freeze({
-            multiUserRights: false,
-            priorityInferencePool: false,
-            sharedBuildLibrary: false,
-            persistentWorldMemo: true,
-            automationBatchJobs: false,
-            adminDashboard: false,
-        }),
-        active: false,
     }),
     pro_monthly: Object.freeze({
         code: 'pro_monthly',
@@ -61,32 +41,14 @@ export const SKU_CATALOG = Object.freeze({
         }),
         active: true,
     }),
-    pro_annual: Object.freeze({
-        code: 'pro_annual',
-        name: 'Pro Annual',
-        kind: SUBSCRIPTION,
-        tier: 'pro',
-        billingPeriod: 'annual',
-        priceUsd: 129.99,
-        description: 'Annual Pro plan with discounted pricing for committed builders.',
-        capabilities: Object.freeze({
-            multiUserRights: false,
-            priorityInferencePool: true,
-            sharedBuildLibrary: true,
-            persistentWorldMemo: true,
-            automationBatchJobs: false,
-            adminDashboard: false,
-        }),
-        active: true,
-    }),
-    server_license_monthly: Object.freeze({
-        code: 'server_license_monthly',
-        name: 'Server License Monthly',
+    admin_monthly: Object.freeze({
+        code: 'admin_monthly',
+        name: 'Admin Monthly',
         kind: SUBSCRIPTION,
         tier: 'admin',
         billingPeriod: 'monthly',
-        priceUsd: 49.99,
-        description: 'Infrastructure-grade server license for multi-user and automation workloads.',
+        priceUsd: 24.99,
+        description: 'Admin tier with highest limits and priority routing.',
         capabilities: Object.freeze({
             multiUserRights: true,
             priorityInferencePool: true,
@@ -94,37 +56,22 @@ export const SKU_CATALOG = Object.freeze({
             persistentWorldMemo: true,
             automationBatchJobs: true,
             adminDashboard: true,
-            maxConcurrency: 16,
-        }),
-        active: true,
-    }),
-    mega_build_pass: Object.freeze({
-        code: 'mega_build_pass',
-        name: 'Mega Build Pass',
-        kind: ONE_TIME,
-        tier: 'pro',
-        billingPeriod: 'one_time',
-        priceUsd: 19.99,
-        description: 'One-time unlock for oversized/expedited mega build jobs.',
-        capabilities: Object.freeze({
-            megaBuildQuotaBoost: true,
-            priorityInferencePool: true,
+            maxConcurrency: 8,
         }),
         active: true,
     }),
 });
 
 const DEFAULT_SKU_BY_TIER = Object.freeze({
-    starter: 'lite_monthly',
+    starter: 'starter_monthly',
     pro: 'pro_monthly',
-    admin: 'server_license_monthly',
+    admin: 'admin_monthly',
 });
 
 /**
  * Return active SKU entries for API consumption.
  * @returns {Array<{
  *   code: string,
- *   legacyCodes?: string[],
  *   name: string,
  *   kind: 'subscription' | 'one_time',
  *   tier: string,
@@ -152,14 +99,7 @@ export function getSkuByCode(code) {
     }
 
     const normalizedCode = code.trim();
-    if (SKU_CATALOG[normalizedCode] && SKU_CATALOG[normalizedCode].active) {
-        return SKU_CATALOG[normalizedCode];
-    }
-
-    const matchingAlias = Object.values(SKU_CATALOG)
-        .find((sku) => sku.active && Array.isArray(sku.legacyCodes) && sku.legacyCodes.includes(normalizedCode));
-
-    return matchingAlias || SKU_CATALOG[normalizedCode] || null;
+    return SKU_CATALOG[normalizedCode] || null;
 }
 
 /**

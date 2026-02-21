@@ -142,6 +142,21 @@ function overTierPromptLimit({ commander, prompt }) {
   )
 }
 
+async function runBestEffortPersistence(label, fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    console.warn(`⚠️ ${label} skipped: ${error.message}`);
+    return null;
+  }
+}
+
+function fireAndForgetLogEntry(log) {
+  void addLogEntry(log).catch((error) => {
+    console.warn(`⚠️ Log entry skipped: ${error.message}`);
+  });
+}
+
 export async function handlePlayerCommand({ commander, bot, message, username = 'Commander' }) {
   console.log(`⚙️ Executing: ${message} from ${username}`);
 
@@ -159,7 +174,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       );
       bot.pathfinder.setGoal(goal);
 
-      addLogEntry({ type: "command", message: "move to", data: JSON.stringify(goal), level: 0 })
+      fireAndForgetLogEntry({ type: "command", message: "move to", data: JSON.stringify(goal), level: 0 })
 
       bot.chat("On my way!");
     } else {
@@ -175,7 +190,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           const goal = new goals.GoalBlock(Math.floor(x), Math.floor(y), Math.floor(z));
           bot.pathfinder.setGoal(goal);
 
-          addLogEntry({ type: "command", message: "move to specific x,y,z", data: JSON.stringify(goal), level: 0 })
+          fireAndForgetLogEntry({ type: "command", message: "move to specific x,y,z", data: JSON.stringify(goal), level: 0 })
 
           bot.chat("On my way! This might take a while...");
         } else {
@@ -200,7 +215,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
     const goal = new goals.GoalFollow(playerEntity, followDistance);
     bot.pathfinder.setGoal(goal, true);
-    addLogEntry({
+    fireAndForgetLogEntry({
       type: "command",
       message: "follow",
       data: { username, followDistance },
@@ -214,7 +229,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     bot.pathfinder.setGoal(null);
     bot.chat("Okay, stopped.");
 
-    addLogEntry({ type: "command", message: "stop", data: bot.entity.position.floored(), level: 0 })
+    fireAndForgetLogEntry({ type: "command", message: "stop", data: bot.entity.position.floored(), level: 0 })
 
     return;
   }
@@ -227,7 +242,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       bot.chat(`❌ Sorry, your prompt is too long for your tier "${commander.tier}"...`);
       console.warn(`⚠️ Prompt exceeded limits for tier "${commander.tier}". prompt length:${prompt.length} chars`);
 
-      addLogEntry({
+      fireAndForgetLogEntry({
         type: "prompt_tier_limit",
         message: "user",
         data: {
@@ -253,7 +268,10 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     }
 
     //start the build and log an id
-    const buildId = await createUserBuild({ build })
+    const buildId = await runBestEffortPersistence(
+      'Create build record',
+      () => createUserBuild({ build })
+    );
 
     let steps = []
 
@@ -269,28 +287,38 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan)
       steps = blocks
 
-      await updateUserBuild({
-        buildId,
-        build: {
-          event: "steps_parsed",
-          blockCount: steps.length,
-          tags,
-          actionCount: normalizedPlan.actions.length,
-        }
-      })
+      if (buildId) {
+        await runBestEffortPersistence(
+          'Update build with parsed steps metadata',
+          () => updateUserBuild({
+            buildId,
+            build: {
+              event: "steps_parsed",
+              blockCount: steps.length,
+              tags,
+              actionCount: normalizedPlan.actions.length,
+            }
+          })
+        );
+      }
 
     } catch (error) {
       steps = []
       bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
 
       //log the build error to the server
-      await updateUserBuild({
-        buildId,
-        build: {
-          error: error.stack,
-          error_message: error.message
-        }
-      })
+      if (buildId) {
+        await runBestEffortPersistence(
+          'Update build with parsing error',
+          () => updateUserBuild({
+            buildId,
+            build: {
+              error: error.stack,
+              error_message: error.message
+            }
+          })
+        );
+      }
 
       console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`)
     }
@@ -298,7 +326,12 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
     bot.chat(`💾 Saving build steps...`);
 
     //save steps to backend, later
-    await uploadBuildSteps({ buildId, steps })
+    if (buildId) {
+      await runBestEffortPersistence(
+        'Upload build steps',
+        () => uploadBuildSteps({ buildId, steps })
+      );
+    }
 
     if (steps.length > 0) {
       //check build size, if user's tier too low, reject it
@@ -307,7 +340,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         console.log(`⚠️ User's tier (${commander.tier}) is too low for ${steps.length} blocks to be placed.`)
 
         //user hit tier limit, log this
-        addLogEntry({ type: "block_tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 1 })
+        fireAndForgetLogEntry({ type: "block_tier_limit", message: "user", data: { tier: commander.tier, steps: steps.length }, level: 1 })
 
         return
       }
@@ -355,7 +388,12 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
       console.log(`❌ No structure received from AI or failed to parse`);
 
-      await updateUserBuild({ buildId, build: { error: "build steps array empty" } })
+      if (buildId) {
+        await runBestEffortPersistence(
+          'Mark empty build record error',
+          () => updateUserBuild({ buildId, build: { error: "build steps array empty" } })
+        );
+      }
     }
 
     return;

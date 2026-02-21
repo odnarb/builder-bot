@@ -22,6 +22,7 @@ test('incident manager creates incidents from alerts and resolves them', () => {
   assert.equal(active.length, 1);
   assert.equal(active[0].code, 'high_failure_rate');
   assert.equal(Boolean(getIncidentPlaybooks().high_failure_rate), true);
+  assert.equal(Boolean(getIncidentPlaybooks().emergency_margin_guard_active), true);
 
   const resolved = resolveIncident({ incidentId: active[0].id });
   assert.equal(resolved.status, 'resolved');
