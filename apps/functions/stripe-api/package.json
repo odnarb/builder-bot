@@ -3,7 +3,9 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "dev": "cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json node server.js"
+        "dev": "cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json node server.js",
+        "stage:core": "node ../../../scripts/stage-shared-core.mjs",
+        "check:architecture": "node ../../../scripts/check-architecture-boundaries.mjs"
     },
     "dependencies": {
         "@google-cloud/firestore": "^7.11.3",

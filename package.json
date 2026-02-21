@@ -6,6 +6,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test --test-concurrency=1",
+    "test:api-smoke": "node --test tests/api-routes-smoke.test.js",
+    "check:architecture": "node scripts/check-architecture-boundaries.mjs",
+    "stage:shared-core": "node scripts/stage-shared-core.mjs",
     "dev": "node apps/cli/index.js",
     "dev:bot": "nodemon --ignore 'minecraft-ai-dashboard/*' --ignore 'infra/*' apps/bot/index.js",
     "dev:electron": "electron apps/electron/main.js"
