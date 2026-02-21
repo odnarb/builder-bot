@@ -36,10 +36,20 @@ export AUTH_TOKEN='<paste token here>'
 ```
 - Token must be minted for audience `https://api.mcbuilderbot.com`.
 
-4. Start bot:
+4. Choose one bot launch mode:
+
+Mode A: Start bot from terminal
 ```bash
 npm run dev:bot
 ```
+
+Mode B: Start bot from the Web UI Launch button (Electron only)
+```bash
+npm --prefix apps/webui run dev
+npm run dev:electron
+```
+- Open the Electron app window and click **Launch BuilderBot**.
+- The Launch/Stop buttons use Electron IPC and do not work in plain browser mode.
 
 5. Optional CLI build prompt flow:
 ```bash
