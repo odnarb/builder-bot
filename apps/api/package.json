@@ -3,9 +3,11 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-        "dev": "cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json node server.js",
+        "dev": "npm run stage:core && cross-env GOOGLE_APPLICATION_CREDENTIALS=../../k.json node server.js",
         "pre-scale:simulate": "node scripts/run-pre-scale-simulation.js",
-        "pre-scale:shakeout": "node scripts/run-emergency-guard-shakeout.js"
+        "pre-scale:shakeout": "node scripts/run-emergency-guard-shakeout.js",
+        "stage:core": "node ../../scripts/stage-shared-core.mjs",
+        "check:architecture": "node ../../scripts/check-architecture-boundaries.mjs"
     },
     "dependencies": {
         "@google-cloud/firestore": "^7.11.3",
