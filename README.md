@@ -23,12 +23,25 @@ java -Xmx2G -jar paper-1.20.4-499.jar
 ```bash
 npm --prefix apps/api run dev
 ```
-3. Start bot:
+3. Get an Auth0 access token for local bot API calls:
+```bash
+npm --prefix apps/webui run dev
+```
+- Open `http://localhost:5173` and log in.
+- In browser DevTools -> Network, open a request like `/api/user/tier`.
+- Copy the `Authorization` header token (`Bearer <token>`).
+- Export it in your shell:
+```bash
+export AUTH_TOKEN='<paste token here>'
+```
+- Token must be minted for audience `https://api.mcbuilderbot.com`.
+
+4. Start bot:
 ```bash
 npm run dev:bot
 ```
 
-4. Optional CLI build prompt flow:
+5. Optional CLI build prompt flow:
 ```bash
 npm run dev -- "build a cobblestone tower" --schematic
 ```

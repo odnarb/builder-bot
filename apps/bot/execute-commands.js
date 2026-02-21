@@ -3,6 +3,15 @@ import pkg from 'mineflayer-pathfinder';
 import { updateUserBuild, uploadBuildLogs } from './apiClient.js';
 const { goals } = pkg;
 
+async function runBestEffortPersistence(label, fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    console.warn(`⚠️ ${label} skipped: ${error.message}`);
+    return null;
+  }
+}
+
 /**
  * Execute mixed movement/build actions against the bot.
  * @param {{
@@ -99,10 +108,16 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
   }
   if (buildId) {
     //update the final build
-    await updateUserBuild({ buildId, build })
+    await runBestEffortPersistence(
+      'Update final build status',
+      () => updateUserBuild({ buildId, build })
+    )
 
     //update build log
-    await uploadBuildLogs({ buildId, logs: stepsLog })
+    await runBestEffortPersistence(
+      'Upload build execution logs',
+      () => uploadBuildLogs({ buildId, logs: stepsLog })
+    )
   }
 }
 

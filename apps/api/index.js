@@ -2646,6 +2646,21 @@ app.use(asyncHandler(async (req, res, next) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
+    const status = Number(err?.status || err?.statusCode || 0);
+    if (status === 401 || err?.name === 'UnauthorizedError' || err?.name === 'InvalidTokenError') {
+        return res.status(401).json({
+            error: 'Unauthorized',
+            message: err?.message || 'Missing or invalid access token.',
+        });
+    }
+
+    if (status === 403 || err?.name === 'InsufficientScopeError') {
+        return res.status(403).json({
+            error: 'Forbidden',
+            message: err?.message || 'Insufficient permissions.',
+        });
+    }
+
     console.error('💥 Uncaught error:', err.stack || err);
     res.status(500).json({ error: 'Internal server error' });
 });
