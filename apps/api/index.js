@@ -23,6 +23,7 @@ import {
     updateUsersSession,
     updateUserTier
 } from '../core/firestore/users.js';
+import { createAiGetStructureHandler } from '../core/logic/ai-get-structure.js';
 import {
     getTierAiPolicy,
     getTierFeaturePolicy,
@@ -774,6 +775,7 @@ const routeDeps = {
     sleep,
     buildFallbackPlan,
     parseAndValidateExecutorPlan,
+    createAiGetStructureHandler,
     invalidateAdminFallbackTierCache,
     requireAdminAccess,
     FREE_TIER_THROTTLE_ERROR_CODE,

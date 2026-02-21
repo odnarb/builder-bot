@@ -5,7 +5,7 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
 ## Implementation Status (2026-02-21)
 - [x] Phase 0 baseline smoke tests added (`tests/api-routes-smoke.test.js`).
 - [x] Phase 1 route extraction completed:
-  - `apps/api/index.js` reduced from `2668` lines to `831` lines.
+  - `apps/api/index.js` reduced from `2668` lines to `833` lines.
   - route registration moved into `apps/api/routes/*.js`.
 - [x] Shared-core staging scripts added:
   - `scripts/stage-shared-core.mjs`
@@ -13,7 +13,10 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
 - [x] Architecture boundary checker added:
   - `scripts/check-architecture-boundaries.mjs`
   - currently warns on known API app-root escape imports during migration.
-- [ ] Remaining: deeper logic/db extraction (Phases 2-5) and full deploy-root import cutover.
+- [~] Phase 2 logic extraction started:
+  - `/ai-get-structure` orchestration moved into `apps/core/logic/ai-get-structure.js`.
+  - `apps/api/routes/ai-routes.js` reduced from `707` lines to `42` lines as HTTP adapter only.
+- [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 2-5) and full deploy-root import cutover.
 
 ## Why This Plan Exists
 Your stated goal matches the architecture guidance in `docs/AGENTS.md:237`-`docs/AGENTS.md:249`:
