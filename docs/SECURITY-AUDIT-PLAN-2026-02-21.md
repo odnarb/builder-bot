@@ -50,6 +50,9 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `apps/webui/src/components/WebSocketProvider.jsx:35`
 - [x] Added production runtime warning when WS origin allowlist is not explicitly configured.
   - `apps/bot/ws-server.js:124`
+- [x] Set explicit bot auth mode control (`MC_AUTH_MODE`) with secure default (`offline`) to minimize auth-chain exposure in local/dev default runs.
+  - `apps/bot/index.js:16`
+  - `apps/bot/index.js:67`
 - [x] Added/updated security regression tests.
   - `tests/ai-routes-security.test.js`
   - `tests/user-routes-security.test.js`
@@ -58,18 +61,22 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `tests/api-routes-smoke.test.js`
   - `tests/checkout-confirmation-idempotency.test.js`
   - `tests/security-denied-audit-middleware.test.js`
+  - `tests/admin-routes-security.test.js`
 - [x] Completed production dependency patch upgrades for API, Stripe function, and Web UI runtime trees.
   - `apps/api/package-lock.json`
   - `apps/functions/stripe-api/package-lock.json`
   - `apps/webui/package.json`
   - `apps/webui/package-lock.json`
   - `package-lock.json` (root transitive `jws` update)
+- [x] Updated root transitive `ajv` to a patched release, removing the remaining moderate advisory in the root production tree.
+  - `package-lock.json`
 - [x] Added CI security gates for dependency audit, secret scanning, and protected-route lint checks.
   - `.github/workflows/security-gates.yml`
   - `scripts/security-audit-gate.mjs`
   - `scripts/scan-secrets.mjs`
   - `scripts/check-protected-routes.mjs`
   - `package.json` (`check:security*` scripts)
+  - temporary root allowlist entries require explicit `reviewBy` dates and fail once expired.
 - [x] Added operations alert when persistence is configured for Firestore but runtime falls back to in-memory mode.
   - `apps/api/routes/admin-routes.js:276`
   - `apps/api/context/static-route-deps.js:230`
@@ -87,7 +94,7 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `npm --prefix apps/api audit --omit=dev --json` => `0` vulnerabilities.
   - `npm --prefix apps/functions/stripe-api audit --omit=dev --json` => `0` vulnerabilities.
   - `npm --prefix apps/webui audit --omit=dev --json` => `0` vulnerabilities.
-  - `npm audit --omit=dev --json` (root) => `6` vulnerabilities (`high:5`, `moderate:1`), all in the `mineflayer` transitive chain.
+  - `npm audit --omit=dev --json` (root) => `5` vulnerabilities (`high:5`, `moderate:0`), all in the `mineflayer` transitive chain.
 - Security gate command validates current CI checks:
   - `npm run check:security` => pass
 
@@ -159,7 +166,7 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
 
 ### High: Dependency vulnerabilities (production trees)
 - Current evidence (`npm audit --omit=dev`, 2026-02-21):
-  - Root: 6 (`high:5`, `moderate:1`)
+  - Root: 5 (`high:5`, `moderate:0`)
   - `apps/api`: 0
   - `apps/functions/stripe-api`: 0
   - `apps/webui`: 0
@@ -167,9 +174,10 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
 - Implemented controls:
   - upgraded API and Stripe service trees via patch-level updates (`express`, `body-parser`, `qs`, `jws`, `raw-body` transitive paths).
   - upgraded Web UI runtime router chain (`react-router-dom`/`react-router`).
-  - refreshed root lockfile transitive `jws` path to eliminate prior `jws` advisory hit.
+  - refreshed root lockfile transitive `jws` and `ajv` paths to eliminate prior non-mineflayer advisories.
+  - bot runtime now defaults to explicit `offline` auth mode unless overridden (`MC_AUTH_MODE`), reducing default exposure to Microsoft/Xbox auth-chain code paths.
 - Residual risk:
-  - remaining root findings are transitive to `mineflayer` / `minecraft-protocol` / `prismarine-auth` / `@xboxreplay/xboxlive-auth` and `ajv` in protocol tooling.
+  - remaining root findings are transitive to `mineflayer` / `minecraft-protocol` / `prismarine-auth` / `@xboxreplay/xboxlive-auth`.
   - `npm audit` suggests a semver-major `mineflayer` downgrade path for full remediation, which requires compatibility validation before adoption.
 
 ## Updated Plan

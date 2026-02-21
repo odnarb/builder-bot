@@ -7,6 +7,17 @@ Natural-language Minecraft builder bot with API, Web UI, and Electron control ap
 - `k.json` in repo root for local Firestore-backed API runs
 - `.env` configured for API/Auth0/Stripe/OpenAI where needed
 
+## Security-Critical Runtime Config
+- `BOT_WS_ALLOWED_ORIGINS`
+  - Comma-separated Web UI origin allowlist for bot control WS connections.
+  - Set explicit values in non-local environments (for example: `https://app.example.com`).
+- `PRE_SCALE_PERSISTENCE_MODE`
+  - Set to `firestore` in staging/prod to require persistent economics/idempotency storage.
+  - If set to `firestore` but persistence cannot initialize, `/api/admin/ops-alerts` emits `persistence_fallback_active`.
+- `MC_AUTH_MODE`
+  - Bot auth mode for Minecraft connection (`offline`, `mojang`, `microsoft`).
+  - Defaults to `offline` to keep local/dev auth surface minimal.
+
 ## Install
 ```bash
 npm install
