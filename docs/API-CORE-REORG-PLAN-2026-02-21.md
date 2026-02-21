@@ -16,6 +16,11 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
 - [~] Phase 2 logic extraction started:
   - `/ai-get-structure` orchestration moved into `apps/core/logic/ai-get-structure.js`.
   - `apps/api/routes/ai-routes.js` reduced from `707` lines to `42` lines as HTTP adapter only.
+- [~] Phase 2 logic extraction continued:
+  - moved AI runtime helper functions to `apps/core/logic/ai-runtime-helpers.js`.
+  - moved emergency guard orchestration cache/evaluator to `apps/core/logic/emergency-guard-runtime.js`.
+  - moved admin access auth/cache middleware to `apps/api/middleware/require-admin-access.js`.
+  - `apps/api/index.js` reduced further from `833` lines to `451` lines.
 - [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 2-5) and full deploy-root import cutover.
 
 ## Why This Plan Exists
