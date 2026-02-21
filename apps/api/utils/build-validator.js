@@ -2,7 +2,7 @@ import {
     getInstructionPlanStats,
     isCommandBlock,
     normalizeInstructionPlan,
-} from '../../shared-utils/instruction-schema.js';
+} from '../shared-utils/instruction-schema.js';
 
 const HARD_COORDINATE_LIMIT = 2048;
 const DEFAULT_MAX_FILL_VOLUME = 60_000;

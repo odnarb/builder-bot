@@ -142,4 +142,6 @@ k.json
 
 # Ignore core in internal folders
 apps/api/core
+apps/api/shared-utils
+apps/api/packages/prompt-parser
 apps/functions/*/core

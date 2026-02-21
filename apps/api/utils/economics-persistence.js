@@ -5,4 +5,4 @@ export {
     isPersistentEconomicsEnabled,
     readPersistentDoc,
     writePersistentDoc,
-} from '../../core/db/firestore/economics-persistence.js';
+} from '../core/db/firestore/economics-persistence.js';

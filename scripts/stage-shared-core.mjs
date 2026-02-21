@@ -12,8 +12,8 @@ const coreTargets = [
   path.resolve(repoRoot, 'apps/functions/stripe-api/core'),
 ];
 
-const includeSharedUtils = process.argv.includes('--include-shared-utils');
-const includePromptParser = process.argv.includes('--include-prompt-parser');
+const includeSharedUtils = !process.argv.includes('--core-only');
+const includePromptParser = !process.argv.includes('--core-only');
 
 /**
  * Remove destination dir and copy source tree.

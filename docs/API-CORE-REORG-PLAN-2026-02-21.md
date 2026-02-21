@@ -34,7 +34,11 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
     - `apps/core/db/firestore/economics-persistence.js`
   - converted `apps/api/utils/economics-persistence.js` into a thin compatibility re-export adapter.
   - updated architecture boundary allowlist to point at shared db adapter path.
-- [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 2-5) and full deploy-root import cutover.
+- [~] Phase 4 deploy-root import cutover started:
+  - switched API imports to staged in-app paths (`apps/api/core`, `apps/api/shared-utils`, `apps/api/packages/prompt-parser`).
+  - `scripts/stage-shared-core.mjs` now stages shared-utils and prompt-parser by default (use `--core-only` to skip).
+  - `scripts/check-architecture-boundaries.mjs` now enforces deploy-root boundaries by resolving relative imports (API + stripe function) and is currently clean.
+- [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 3-5) and staged-path cleanup of compatibility adapters.
 
 ## Why This Plan Exists
 Your stated goal matches the architecture guidance in `docs/AGENTS.md:237`-`docs/AGENTS.md:249`:

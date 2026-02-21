@@ -13,8 +13,8 @@ import {
     updateUsersBuild,
     updateUsersSession,
     updateUserTier,
-} from '../../core/firestore/users.js';
-import { createAiGetStructureHandler } from '../../core/logic/ai-get-structure.js';
+} from '../core/firestore/users.js';
+import { createAiGetStructureHandler } from '../core/logic/ai-get-structure.js';
 import {
     getTierAiPolicy,
     getTierFeaturePolicy,
@@ -149,8 +149,8 @@ import {
     setRenewalPreference,
 } from '../utils/billing-policy.js';
 import logger from '../utils/logger.js';
-import { toLegacyBlocksAndTags } from '../../shared-utils/instruction-schema.js';
-import { exportInstructionPlanToSchematic } from '../../shared-utils/schematic-export.js';
+import { toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
+import { exportInstructionPlanToSchematic } from '../shared-utils/schematic-export.js';
 
 export const EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE = 'DISABLE_GUARD_TEMPORARILY';
 

@@ -8,13 +8,13 @@ import {
     createAiRuntimeHelpers,
     FREE_TIER_THROTTLE_ERROR_CODE,
     INFRA_COST_PER_REQUEST_USD,
-} from '../../core/logic/ai-runtime-helpers.js';
-import { createEmergencyGuardRuntime } from '../../core/logic/emergency-guard-runtime.js';
-import { parsePrompt } from '../../../packages/prompt-parser/index.js';
+} from '../core/logic/ai-runtime-helpers.js';
+import { createEmergencyGuardRuntime } from '../core/logic/emergency-guard-runtime.js';
+import { parsePrompt } from '../packages/prompt-parser/index.js';
 import {
     normalizeInstructionPlan,
     optimizeInstructionPlan,
-} from '../../shared-utils/instruction-schema.js';
+} from '../shared-utils/instruction-schema.js';
 
 /**
  * Resolve a stable per-user usage key for monthly token budgeting.

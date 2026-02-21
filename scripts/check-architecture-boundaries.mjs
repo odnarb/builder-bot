@@ -13,12 +13,15 @@ const CHECK_DIRS = [
 
 const IGNORED_SUBPATHS = [
   'apps/api/core/',
+  'apps/api/shared-utils/',
+  'apps/api/packages/prompt-parser/',
   'apps/functions/stripe-api/core/',
 ];
 
 const FIRESTORE_IMPORT_RE = /from\s+['"]@google-cloud\/firestore['"]/;
 const DYNAMIC_FIRESTORE_IMPORT_RE = /import\(['"]@google-cloud\/firestore['"]\)/;
-const RELATIVE_IMPORT_RE = /from\s+['"](\.\.\/[^'"]+)['"]/g;
+const STATIC_RELATIVE_IMPORT_RE = /from\s+['"](\.{1,2}\/[^'"]+)['"]/g;
+const DYNAMIC_RELATIVE_IMPORT_RE = /import\(\s*['"](\.{1,2}\/[^'"]+)['"]\s*\)/g;
 
 const ALLOWED_FIRESTORE_FILES = new Set([
   'apps/core/firestore/users.js',
@@ -26,8 +29,6 @@ const ALLOWED_FIRESTORE_FILES = new Set([
 ]);
 
 const boundaryErrors = [];
-const boundaryWarnings = [];
-
 /**
  * List all JS source files under a directory.
  * @param {string} directory
@@ -100,41 +101,45 @@ function checkFirestoreImportBoundary(relativePath, content) {
 }
 
 /**
- * Validate function app imports do not escape app root.
- * @param {string} relativePath
+ * Collect relative module specifiers from static + dynamic imports.
  * @param {string} content
+ * @returns {string[]}
  */
-function checkFunctionImportBoundary(relativePath, content) {
-  if (!relativePath.startsWith('apps/functions/stripe-api/')) {
-    return;
-  }
+function collectRelativeImportSpecifiers(content) {
+  const specifiers = [];
+  STATIC_RELATIVE_IMPORT_RE.lastIndex = 0;
+  DYNAMIC_RELATIVE_IMPORT_RE.lastIndex = 0;
 
   let match;
-  while ((match = RELATIVE_IMPORT_RE.exec(content)) !== null) {
-    if (match[1].startsWith('../')) {
-      boundaryErrors.push(
-        `${relativePath}: import escapes function app root (${match[1]})`,
-      );
-    }
+  while ((match = STATIC_RELATIVE_IMPORT_RE.exec(content)) !== null) {
+    specifiers.push(match[1]);
   }
+
+  while ((match = DYNAMIC_RELATIVE_IMPORT_RE.exec(content)) !== null) {
+    specifiers.push(match[1]);
+  }
+
+  return specifiers;
 }
 
 /**
- * Warn when API imports escape app root (until staging import cutover is complete).
- * @param {string} relativePath
- * @param {string} content
+ * Validate app imports do not escape deploy source root.
+ * @param {{ relativePath: string, absolutePath: string, content: string, appRootRelative: string }} params
  */
-function warnApiEscapeImports(relativePath, content) {
-  if (!relativePath.startsWith('apps/api/')) {
+function checkDeployRootImportBoundary({ relativePath, absolutePath, content, appRootRelative }) {
+  if (!relativePath.startsWith(`${appRootRelative}/`)) {
     return;
   }
 
-  let match;
-  while ((match = RELATIVE_IMPORT_RE.exec(content)) !== null) {
-    const specifier = match[1];
-    if (specifier.startsWith('../core/') || specifier.startsWith('../shared-utils/') || specifier.startsWith('../../packages/')) {
-      boundaryWarnings.push(
-        `${relativePath}: app-root escaping import currently allowed during migration (${specifier})`,
+  const appRootAbsolute = path.resolve(repoRoot, appRootRelative);
+  const sourceDir = path.dirname(absolutePath);
+  const specifiers = collectRelativeImportSpecifiers(content);
+  for (const specifier of specifiers) {
+    const resolvedPath = path.resolve(sourceDir, specifier);
+    const withinRoot = resolvedPath === appRootAbsolute || resolvedPath.startsWith(`${appRootAbsolute}${path.sep}`);
+    if (!withinRoot) {
+      boundaryErrors.push(
+        `${relativePath}: import escapes app deploy root "${appRootRelative}" (${specifier})`,
       );
     }
   }
@@ -148,17 +153,18 @@ async function main() {
       const content = await fs.readFile(file, 'utf8');
 
       checkFirestoreImportBoundary(relativePath, content);
-      checkFunctionImportBoundary(relativePath, content);
-      warnApiEscapeImports(relativePath, content);
-    }
-  }
-
-  if (boundaryWarnings.length > 0) {
-    // eslint-disable-next-line no-console
-    console.warn('[check-architecture-boundaries] warnings:');
-    for (const warning of boundaryWarnings) {
-      // eslint-disable-next-line no-console
-      console.warn(`- ${warning}`);
+      checkDeployRootImportBoundary({
+        relativePath,
+        absolutePath: file,
+        content,
+        appRootRelative: 'apps/api',
+      });
+      checkDeployRootImportBoundary({
+        relativePath,
+        absolutePath: file,
+        content,
+        appRootRelative: 'apps/functions/stripe-api',
+      });
     }
   }
 
