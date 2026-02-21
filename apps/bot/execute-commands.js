@@ -12,6 +12,20 @@ async function runBestEffortPersistence(label, fn) {
   }
 }
 
+function resolveFollowTargetName({ stepTarget, fallbackUsername }) {
+  const normalizedTarget = typeof stepTarget === 'string' ? stepTarget.trim() : '';
+  if (!normalizedTarget) {
+    return fallbackUsername;
+  }
+
+  const lowered = normalizedTarget.toLowerCase();
+  if (lowered === 'commander' || lowered === '@commander') {
+    return fallbackUsername;
+  }
+
+  return normalizedTarget;
+}
+
 /**
  * Execute mixed movement/build actions against the bot.
  * @param {{
@@ -67,7 +81,10 @@ export async function executeCommands({ bot, buildId, commands, username = 'Comm
       }
 
     } else if (step.type === 'follow') {
-      const targetPlayerName = typeof step.target === 'string' ? step.target : username;
+      const targetPlayerName = resolveFollowTargetName({
+        stepTarget: step.target,
+        fallbackUsername: username,
+      });
       const targetEntity = bot.players[targetPlayerName]?.entity;
       const followDistance = Math.max(1, Math.min(12, Number(step.distance) || 3));
 

@@ -12,6 +12,7 @@ Scope audited: `docs/*` + `apps/bot/*` + key integration surfaces (`apps/api`, `
 - [x] P1 single-flight build command guard enabled (`apps/bot/command-router.js`).
 - [x] P2 regression tests added for transform/auth/WS routing (`tests/offset-structure.test.js`, `tests/bot-player-identity.test.js`, `tests/bot-ws-routing.test.js`, `tests/bot-execute-commands.test.js`).
 - [x] P2 API tier-auth hardening applied on `/ai-get-structure` (optional auth + unauth tier override suppression).
+- [x] P2 mixed-command execution hardening completed (follow `commander` alias resolution + sequence/order regression tests in `tests/bot-execute-commands.test.js`).
 
 ## Executive Summary
 The current bot flow is close to the documented roadmap, but there are several correctness and control-path gaps. The most critical issue is that mixed action plans (`move_to` + placements) are not preserved end-to-end in chat build execution.
