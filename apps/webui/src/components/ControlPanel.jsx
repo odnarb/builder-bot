@@ -9,6 +9,8 @@ export default function ControlPanel() {
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [authToken, setAuthToken] = useState(null);
   const [botStatus, setBotStatus] = useState('offline');
+  const [launchError, setLaunchError] = useState('');
+  const [isElectronRuntime, setIsElectronRuntime] = useState(false);
 
   const isBotRunning = botStatus === 'running';
   const isBotLaunching = botStatus === 'launching';
@@ -27,33 +29,65 @@ export default function ControlPanel() {
       : 'bg-gray-500';
 
   const handleLaunchBot = (envVars) => {
-    window.electronAPI?.launchBot?.(envVars);
+    if (!window.electronAPI?.launchBot) {
+      setLaunchError('Launch is only available from the Electron app. Run `npm run dev:electron` or launch the bot from terminal.');
+      return;
+    }
+
+    setLaunchError('');
+    window.electronAPI.launchBot(envVars);
   };
 
   const handleStopBot = () => {
-    window.electronAPI?.stopBot?.()
+    if (!window.electronAPI?.stopBot) {
+      setLaunchError('Stop is only available from the Electron app.');
+      return;
+    }
+
+    window.electronAPI.stopBot();
   }
 
   useEffect(() => {
-    window.electronAPI?.onBotStatus?.(({ status, code }) => {
+    const hasElectron = Boolean(window.electronAPI?.launchBot);
+    setIsElectronRuntime(hasElectron);
+
+    if (!hasElectron) {
+      return;
+    }
+
+    window.electronAPI.onBotStatus(({ status }) => {
       console.log('⚙️ Bot status:', status);
       setBotStatus(status); // update your UI button state here
     });
   }, []);
 
   const openModal = async () => {
+    if (!window.electronAPI?.launchBot) {
+      setLaunchError('Launch is only available from the Electron app. Run `npm run dev:electron`, then launch from there.');
+      return;
+    }
+
     try {
       const token = await getAccessTokenSilently();
 
       setAuthToken(token);
+      setLaunchError('');
       setShowLaunchModal(true);
     } catch (e) {
+      setLaunchError('Could not get an Auth0 token. Log in again and retry.');
       console.error('🔒 Failed to fetch token:', e);
     }
   };
 
   return (
     <div className="space-y-4 mt-4">
+      {!isElectronRuntime && (
+        <div className="rounded border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-200">
+          Launch/Stop controls require Electron IPC and are disabled in plain browser mode.
+          Start Electron with <code>npm run dev:electron</code>, or run the bot directly via <code>npm run dev:bot</code>.
+        </div>
+      )}
+
       <div>
         <button
           onClick={openModal}
@@ -83,6 +117,10 @@ export default function ControlPanel() {
           🛑 Stop BuilderBot
         </button>
       </div>
+
+      {launchError && (
+        <p className="text-sm text-red-300">{launchError}</p>
+      )}
 
       <div className="flex items-center space-x-2">
         <div className={`w-3 h-3 rounded-full ${statusColor}`} />
