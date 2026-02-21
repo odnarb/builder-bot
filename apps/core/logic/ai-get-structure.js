@@ -382,6 +382,10 @@ ${canaryVariantEnabled ? 'Prefer explicit movement risk notes and compact determ
 Generate ONLY raw JSON in this shape:
 {
   "actions": [
+    { "type": "prepare_site", "label": "foundation" },
+    { "type": "flatten_area", "x": 0, "y": 64, "z": 0, "width": 8, "length": 8, "targetY": 64, "fillBlock": "minecraft:dirt" },
+    { "type": "clear_volume", "x": 0, "y": 65, "z": 0, "width": 8, "height": 4, "length": 8 },
+    { "type": "ensure_access", "x": 0, "y": 64, "z": 0, "radius": 2 },
     { "type": "move_to", "x": 0, "y": 64, "z": 0 },
     { "type": "place_block", "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
   ],
@@ -391,6 +395,9 @@ Rules:
 - Relative coordinates only.
 - Keep movement minimal and avoid micro-step loops.
 - Prefer placement actions; movement should be coarse navigation only.
+- Site prep actions are allowed: prepare_site, flatten_area, clear_volume, ensure_access.
+- If context terrain flatness is low or obstruction/hazard ratios are high, include prep actions before placement actions.
+- Keep prep bounded and proportional to structure size.
 - No markdown or explanations.
 - No illegal blocks.
 - Do not exceed tier constraints in planner notes.

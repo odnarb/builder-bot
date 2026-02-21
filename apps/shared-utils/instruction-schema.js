@@ -1,6 +1,10 @@
 const SUPPORTED_ACTION_TYPES = Object.freeze([
   'move_to',
   'place_block',
+  'prepare_site',
+  'flatten_area',
+  'clear_volume',
+  'ensure_access',
   'follow',
   'stop',
 ]);
@@ -21,6 +25,30 @@ function toCoordinate(value, fieldName) {
   }
 
   return Math.trunc(num);
+}
+
+/**
+ * Coerce a raw value into a bounded positive integer.
+ * @param {unknown} value
+ * @param {string} fieldName
+ * @param {{ min?: number, max?: number }} [options]
+ * @returns {number}
+ * @throws {Error}
+ */
+function toPositiveInteger(value, fieldName, options = {}) {
+  const min = Number.isFinite(Number(options.min)) ? Math.max(1, Math.trunc(Number(options.min))) : 1;
+  const max = Number.isFinite(Number(options.max)) ? Math.max(min, Math.trunc(Number(options.max))) : 512;
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    throw new Error(`Invalid "${fieldName}" value.`);
+  }
+
+  const normalized = Math.trunc(num);
+  if (normalized < min || normalized > max) {
+    throw new Error(`"${fieldName}" must be between ${min} and ${max}.`);
+  }
+
+  return normalized;
 }
 
 /**
@@ -78,6 +106,51 @@ function normalizeAction(action, options = {}) {
       y: toCoordinate(action.y, 'y'),
       z: toCoordinate(action.z, 'z'),
       block: normalizeBlockId(action.block),
+    };
+  }
+
+  if (inferredType === 'prepare_site') {
+    return {
+      type: 'prepare_site',
+      label: String(action.label || action.phase || 'default').slice(0, 48),
+    };
+  }
+
+  if (inferredType === 'flatten_area') {
+    const y = toCoordinate(action.y, 'y');
+    return {
+      type: 'flatten_area',
+      x: toCoordinate(action.x, 'x'),
+      y,
+      z: toCoordinate(action.z, 'z'),
+      width: toPositiveInteger(action.width, 'width', { min: 1, max: 64 }),
+      length: toPositiveInteger(action.length, 'length', { min: 1, max: 64 }),
+      targetY: typeof action.targetY === 'undefined'
+        ? y
+        : toCoordinate(action.targetY, 'targetY'),
+      fillBlock: normalizeBlockId(action.fillBlock || action.block || 'minecraft:dirt'),
+    };
+  }
+
+  if (inferredType === 'clear_volume') {
+    return {
+      type: 'clear_volume',
+      x: toCoordinate(action.x, 'x'),
+      y: toCoordinate(action.y, 'y'),
+      z: toCoordinate(action.z, 'z'),
+      width: toPositiveInteger(action.width, 'width', { min: 1, max: 64 }),
+      height: toPositiveInteger(action.height, 'height', { min: 1, max: 32 }),
+      length: toPositiveInteger(action.length, 'length', { min: 1, max: 64 }),
+    };
+  }
+
+  if (inferredType === 'ensure_access') {
+    return {
+      type: 'ensure_access',
+      x: toCoordinate(action.x, 'x'),
+      y: toCoordinate(action.y, 'y'),
+      z: toCoordinate(action.z, 'z'),
+      radius: toPositiveInteger(action.radius, 'radius', { min: 1, max: 24 }),
     };
   }
 
@@ -218,6 +291,52 @@ export function toLegacyBlocksAndTags(plan) {
       continue;
     }
 
+    if (action.type === 'prepare_site') {
+      blocks.push({
+        type: 'prepare_site',
+        label: action.label,
+      });
+      continue;
+    }
+
+    if (action.type === 'flatten_area') {
+      blocks.push({
+        type: 'flatten_area',
+        x: action.x,
+        y: action.y,
+        z: action.z,
+        width: action.width,
+        length: action.length,
+        targetY: action.targetY,
+        fillBlock: action.fillBlock,
+      });
+      continue;
+    }
+
+    if (action.type === 'clear_volume') {
+      blocks.push({
+        type: 'clear_volume',
+        x: action.x,
+        y: action.y,
+        z: action.z,
+        width: action.width,
+        height: action.height,
+        length: action.length,
+      });
+      continue;
+    }
+
+    if (action.type === 'ensure_access') {
+      blocks.push({
+        type: 'ensure_access',
+        x: action.x,
+        y: action.y,
+        z: action.z,
+        radius: action.radius,
+      });
+      continue;
+    }
+
     if (action.type === 'stop') {
       blocks.push({ type: 'stop' });
     }
@@ -232,7 +351,17 @@ export function toLegacyBlocksAndTags(plan) {
 /**
  * Compute summary metrics for instruction plans.
  * @param {{ actions: Array<Record<string, unknown>> }} plan
- * @returns {{ actionCount: number, placeBlockCount: number, moveCount: number, followCount: number, stopCount: number }}
+ * @returns {{
+ *   actionCount: number,
+ *   placeBlockCount: number,
+ *   moveCount: number,
+ *   followCount: number,
+ *   stopCount: number,
+ *   prepareSiteCount: number,
+ *   flattenAreaCount: number,
+ *   clearVolumeCount: number,
+ *   ensureAccessCount: number,
+ * }}
  */
 export function getInstructionPlanStats(plan) {
   const stats = {
@@ -241,6 +370,10 @@ export function getInstructionPlanStats(plan) {
     moveCount: 0,
     followCount: 0,
     stopCount: 0,
+    prepareSiteCount: 0,
+    flattenAreaCount: 0,
+    clearVolumeCount: 0,
+    ensureAccessCount: 0,
   };
 
   for (const action of plan.actions || []) {
@@ -256,6 +389,22 @@ export function getInstructionPlanStats(plan) {
     }
     if (action.type === 'follow') {
       stats.followCount += 1;
+      continue;
+    }
+    if (action.type === 'prepare_site') {
+      stats.prepareSiteCount += 1;
+      continue;
+    }
+    if (action.type === 'flatten_area') {
+      stats.flattenAreaCount += 1;
+      continue;
+    }
+    if (action.type === 'clear_volume') {
+      stats.clearVolumeCount += 1;
+      continue;
+    }
+    if (action.type === 'ensure_access') {
+      stats.ensureAccessCount += 1;
       continue;
     }
     if (action.type === 'stop') {

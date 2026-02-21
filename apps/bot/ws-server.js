@@ -7,6 +7,7 @@ import { handlePlayerCommand, runBuildCommandSingleFlight } from './command-rout
 import { executeCommands } from './execute-commands.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { resolveCommanderUsername } from './player-identity.js';
+import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
 
 const DEFAULT_ALLOWED_WS_ORIGINS = Object.freeze([
   'http://127.0.0.1:5173',
@@ -282,6 +283,7 @@ export function startBotServer({ bot, commander }) {
               bot,
               commands: blocks,
               username,
+              decisionPolicy: resolveDecisionTierPolicy(commander?.tier),
             }),
           });
 

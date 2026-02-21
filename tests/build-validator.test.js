@@ -80,3 +80,29 @@ test('validateInstructionPlan rejects malformed payloads', () => {
     assert.equal(result.valid, false);
     assert.equal(result.errors[0].code, 'invalid_plan_payload');
 });
+
+test('validateInstructionPlan enforces prep action count and prep volume limits', () => {
+    const result = validateInstructionPlan({
+        planPayload: {
+            actions: [
+                { type: 'prepare_site', label: 'a' },
+                { type: 'prepare_site', label: 'b' },
+                { type: 'prepare_site', label: 'c' },
+                { type: 'prepare_site', label: 'd' },
+                { type: 'flatten_area', x: 0, y: 64, z: 0, width: 20, length: 20, targetY: 64, fillBlock: 'dirt' },
+            ],
+        },
+        tier: 'free',
+        tierFeaturePolicy: {
+            maxBlocksPerBuild: 50,
+            maxBuildVolume: 500,
+            allowCommandBlocks: false,
+            maxPrepActions: 3,
+            maxPrepVolume: 120,
+        },
+    });
+
+    assert.equal(result.valid, false);
+    assert.equal(result.errors.some((error) => error.code === 'prep_action_count_exceeded'), true);
+    assert.equal(result.errors.some((error) => error.code === 'prep_volume_exceeded'), true);
+});

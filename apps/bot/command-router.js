@@ -9,6 +9,8 @@ import {
   resolveTier,
 } from '../api/config/tier-policy.js';
 import { executeCommands } from './execute-commands.js';
+import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
+import { buildDecisionWorldContext, ensurePathfinderTelemetry } from './world-context.js';
 import { resolveCommanderUsername } from './player-identity.js';
 import {
   createUserBuild,
@@ -27,18 +29,25 @@ function normalizeCommanderTier(commander) {
 
 /**
  * Build a compact context snapshot for server-side AI injection.
- * @param {{ bot: any, commander: { tier: string }, prompt: string }} params
+ * @param {{
+ *   bot: any,
+ *   commander: { tier: string },
+ *   prompt: string,
+ *   decisionPolicy: ReturnType<typeof resolveDecisionTierPolicy>,
+ * }} params
  * @returns {Record<string, unknown>}
  */
-function buildAiContext({ bot, commander, prompt }) {
+function buildAiContext({ bot, commander, prompt, decisionPolicy }) {
+  ensurePathfinderTelemetry(bot);
   const position = bot?.entity?.position;
   const inventoryItems = bot?.inventory?.items?.() || [];
+  const resolvedDecisionPolicy = decisionPolicy || resolveDecisionTierPolicy(normalizeCommanderTier(commander));
 
   let nearbyBlockSummary = [];
   try {
     const nearby = bot.findBlocks({
       matching: block => block.name !== 'air',
-      maxDistance: 8,
+      maxDistance: Math.max(4, Math.min(32, Number(resolvedDecisionPolicy.maxScanRadius || 8))),
       count: 30,
     });
 
@@ -66,6 +75,12 @@ function buildAiContext({ bot, commander, prompt }) {
     }))
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 8);
+
+  const decisionWorldContext = buildDecisionWorldContext({
+    bot,
+    prompt,
+    decisionPolicy: resolvedDecisionPolicy,
+  });
 
   return {
     identity: {
@@ -95,10 +110,26 @@ function buildAiContext({ bot, commander, prompt }) {
       task: 'build',
       promptChars: prompt.length,
       promptWords: prompt.trim().split(/\s+/).length,
+      decisionPolicyTier: resolvedDecisionPolicy.tier,
+      maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
+      maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
+      maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
+      maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
     },
     usageCounters: {
       requestCount: 1,
     },
+    decisionPolicy: {
+      tier: resolvedDecisionPolicy.tier,
+      maxScanRadius: resolvedDecisionPolicy.maxScanRadius,
+      maxAnchorCandidates: resolvedDecisionPolicy.maxAnchorCandidates,
+      maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
+      maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
+      maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
+      maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
+      allowAggressiveRecovery: resolvedDecisionPolicy.allowAggressiveRecovery,
+    },
+    ...decisionWorldContext,
   };
 }
 
@@ -294,6 +325,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
   if (msg.startsWith('build ')) {
     const prompt = rawMessage.slice(6).trim();
     const normalizedTier = normalizeCommanderTier(commander);
+    const decisionPolicy = resolveDecisionTierPolicy(normalizedTier);
 
     if (!prompt) {
       bot.chat('❌ Please provide a build prompt.');
@@ -305,6 +337,12 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
       username,
       commandType: 'build',
       run: async () => {
+        if (bot?.pathfinder) {
+          bot.pathfinder.thinkTimeout = decisionPolicy.pathfinderThinkTimeoutMs;
+          bot.pathfinder.tickTimeout = decisionPolicy.pathfinderTickTimeoutMs;
+          bot.pathfinder.searchRadius = decisionPolicy.pathfinderSearchRadius;
+        }
+
         //check prompt before submitting
         if (overTierPromptLimit({ commander, prompt })) {
           const promptTokens = estimatePromptTokens(prompt);
@@ -350,7 +388,12 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         const aiPayload = await getStructureAndTagsFromAI({
           message: prompt,
           tier: normalizedTier,
-          context: buildAiContext({ bot, commander: { ...commander, tier: normalizedTier }, prompt }),
+          context: buildAiContext({
+            bot,
+            commander: { ...commander, tier: normalizedTier },
+            prompt,
+            decisionPolicy,
+          }),
         });
 
         try {
@@ -442,8 +485,17 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
 
           // 1. Extract unique blocks from the command list
           const blockNames = [...new Set(adjustedCommands
-            .filter(step => typeof step.block === 'string')
-            .map(step => step.block.replace(/^minecraft:/, '')))];
+            .flatMap((step) => {
+              const names = [];
+              if (typeof step.block === 'string') {
+                names.push(step.block);
+              }
+              if (typeof step.fillBlock === 'string') {
+                names.push(step.fillBlock);
+              }
+              return names;
+            })
+            .map(block => String(block).replace(/^minecraft:/, '')))];
 
           // 2. Give all blocks to the bot ahead of time
           for (const blockName of blockNames) {
@@ -470,7 +522,13 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           bot.chat(`Attempting to build...`);
 
           //finalize the command set
-          await executeCommands({ bot, buildId, commands: adjustedCommands, username });
+          await executeCommands({
+            bot,
+            buildId,
+            commands: adjustedCommands,
+            username,
+            decisionPolicy,
+          });
         } else {
           bot.chat(`❌ I couldn't understand how to build that. This has been logged.`);
           console.log(`❌ No structure received from AI or failed to parse`);
