@@ -21,6 +21,9 @@ Scope: `apps/api`, `apps/core`, `apps/functions/stripe-api`, `docs/AGENTS.md`
   - moved emergency guard orchestration cache/evaluator to `apps/core/logic/emergency-guard-runtime.js`.
   - moved admin access auth/cache middleware to `apps/api/middleware/require-admin-access.js`.
   - `apps/api/index.js` reduced further from `833` lines to `451` lines.
+- [~] API bootstrap/context split completed:
+  - moved route dependency assembly into `apps/api/app-context.js`.
+  - reduced `apps/api/index.js` from `451` lines to `78` lines (bootstrap + route mounting + error handlers only).
 - [ ] Remaining: deeper logic/db extraction for non-AI flows (Phases 2-5) and full deploy-root import cutover.
 
 ## Why This Plan Exists
