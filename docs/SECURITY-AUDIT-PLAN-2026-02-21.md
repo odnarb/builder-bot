@@ -56,6 +56,12 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - `tests/api-routes-smoke.test.js`
   - `tests/checkout-confirmation-idempotency.test.js`
   - `tests/security-denied-audit-middleware.test.js`
+- [x] Completed production dependency patch upgrades for API, Stripe function, and Web UI runtime trees.
+  - `apps/api/package-lock.json`
+  - `apps/functions/stripe-api/package-lock.json`
+  - `apps/webui/package.json`
+  - `apps/webui/package-lock.json`
+  - `package-lock.json` (root transitive `jws` update)
 
 ## Validation
 - Full test suite passes after the changes:
@@ -66,6 +72,11 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - Stripe confirm ownership/payment/replay/idempotency handling
   - WS token + origin allowlist helper behavior
   - denied-auth/denied-authz audit event middleware behavior
+- Production dependency audits (2026-02-21):
+  - `npm --prefix apps/api audit --omit=dev --json` => `0` vulnerabilities.
+  - `npm --prefix apps/functions/stripe-api audit --omit=dev --json` => `0` vulnerabilities.
+  - `npm --prefix apps/webui audit --omit=dev --json` => `0` vulnerabilities.
+  - `npm audit --omit=dev --json` (root) => `6` vulnerabilities (`high:5`, `moderate:1`), all in the `mineflayer` transitive chain.
 
 ## Findings and Current Status
 
@@ -133,14 +144,19 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
   - see `apps/api/routes/user-routes.js:190`.
 
 ### High: Dependency vulnerabilities (production trees)
-- Previous evidence (`npm audit --omit=dev`):
-  - Root: 7 (`high:6`, `moderate:1`)
-  - `apps/api`: 4 high
-  - `apps/functions/stripe-api`: 4 high
-  - `apps/webui`: 2
-- Status: **Open**.
-- Notes:
-  - code-path hardening completed; dependency upgrade campaign remains pending.
+- Current evidence (`npm audit --omit=dev`, 2026-02-21):
+  - Root: 6 (`high:5`, `moderate:1`)
+  - `apps/api`: 0
+  - `apps/functions/stripe-api`: 0
+  - `apps/webui`: 0
+- Status: **Partially mitigated**.
+- Implemented controls:
+  - upgraded API and Stripe service trees via patch-level updates (`express`, `body-parser`, `qs`, `jws`, `raw-body` transitive paths).
+  - upgraded Web UI runtime router chain (`react-router-dom`/`react-router`).
+  - refreshed root lockfile transitive `jws` path to eliminate prior `jws` advisory hit.
+- Residual risk:
+  - remaining root findings are transitive to `mineflayer` / `minecraft-protocol` / `prismarine-auth` / `@xboxreplay/xboxlive-auth` and `ajv` in protocol tooling.
+  - `npm audit` suggests a semver-major `mineflayer` downgrade path for full remediation, which requires compatibility validation before adoption.
 
 ## Updated Plan
 
@@ -157,7 +173,9 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
 4. Add structured security audit events for denied authorization attempts. **Done**
 
 ## Phase 2 (3-7 Days)
-1. Dependency upgrade sprint across root/API/webui/stripe-api. **Open**
+1. Dependency upgrade sprint across root/API/webui/stripe-api. **In progress**
+   - API, Stripe function, and Web UI prod trees remediated.
+   - Root transitive mineflayer-chain findings remain open.
 2. Consolidate duplicate lockfiles and standardize one package manager workflow. **Open**
 3. Add automated security checks in CI:
    - `npm audit --omit=dev --audit-level=high`
@@ -166,11 +184,12 @@ Scope audited: `apps/api`, `apps/functions/stripe-api`, `apps/bot`, `apps/webui`
    - **Open**
 
 ## Remaining Actions
-1. Complete dependency upgrades and CI security gating rollout.
-2. Verify production runtime config includes explicit `BOT_WS_ALLOWED_ORIGINS` values per environment.
-3. Validate persistent idempotency path in staging/prod (`PRE_SCALE_PERSISTENCE_MODE=firestore`) and add operational alerting for persistence fallback.
+1. Resolve remaining root dependency findings in the mineflayer transitive chain with compatibility-tested upgrade/override strategy.
+2. Complete CI security gating rollout (`npm audit --omit=dev --audit-level=high`, secret scanning, protected-route lint checks).
+3. Verify production runtime config includes explicit `BOT_WS_ALLOWED_ORIGINS` values per environment.
+4. Validate persistent idempotency path in staging/prod (`PRE_SCALE_PERSISTENCE_MODE=firestore`) and add operational alerting for persistence fallback.
 
 ## Ownership Suggestions
 - Backend/API team: monitor durable Stripe idempotency + denied-auth telemetry in production.
 - Bot platform team: keep WS origin allowlist aligned with deployment surfaces and add WS rejection telemetry.
-- Infra/DevEx: dependency upgrades and CI security gates.
+- Infra/DevEx: root mineflayer-chain dependency remediation strategy + CI security gates.
