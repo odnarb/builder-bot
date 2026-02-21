@@ -1,7 +1,5 @@
 import { createInMemoryRateLimiter } from '../middleware/in-memory-rate-limit.js';
 
-const PROCESSED_CHECKOUT_SESSIONS = new Set();
-
 function hasAllowedSubscriptionStatus(subscription) {
     if (!subscription || typeof subscription !== 'object') {
         return false;
@@ -46,8 +44,23 @@ export function registerStripeRoutes(app, deps) {
         recordTierUpgrade,
         setRenewalPreference,
         getRenewalPreference,
+        claimCheckoutConfirmationSession,
         logger,
     } = deps;
+    const fallbackProcessedCheckoutSessions = new Set();
+    const claimCheckoutSession = typeof claimCheckoutConfirmationSession === 'function'
+        ? claimCheckoutConfirmationSession
+        : async ({ sessionId }) => {
+            const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+            if (!normalizedSessionId) {
+                return false;
+            }
+            if (fallbackProcessedCheckoutSessions.has(normalizedSessionId)) {
+                return false;
+            }
+            fallbackProcessedCheckoutSessions.add(normalizedSessionId);
+            return true;
+        };
     const stripeCreateRateLimiter = createInMemoryRateLimiter({
         windowMs: Number(process.env.STRIPE_CREATE_RATE_LIMIT_WINDOW_MS || 300000),
         maxRequests: Number(process.env.STRIPE_CREATE_RATE_LIMIT_MAX_REQUESTS || 20),
@@ -146,9 +159,6 @@ export function registerStripeRoutes(app, deps) {
         if (!sessionId) {
             return res.status(400).json({ error: 'sessionId is required.' });
         }
-        if (PROCESSED_CHECKOUT_SESSIONS.has(sessionId)) {
-            return res.status(409).json({ error: 'Checkout session has already been processed.' });
-        }
 
         const session = await stripe.checkout.sessions.retrieve(sessionId, {
             expand: ['subscription'],
@@ -196,6 +206,13 @@ export function registerStripeRoutes(app, deps) {
         if (!user) {
             return res.status(404).json({ error: 'User not found.' });
         }
+        const checkoutClaimed = await claimCheckoutSession({
+            sessionId,
+            userId,
+        });
+        if (!checkoutClaimed) {
+            return res.status(409).json({ error: 'Checkout session has already been processed.' });
+        }
         const fromTier = resolveTier(user?.tier || 'free');
         await updateUserTier({ userId, tier: metadataTier });
         invalidateAdminFallbackTierCache(userId);
@@ -218,7 +235,6 @@ export function registerStripeRoutes(app, deps) {
                 currentPeriodEnd,
             });
         }
-        PROCESSED_CHECKOUT_SESSIONS.add(sessionId);
 
         res.json({
             status: 'success',

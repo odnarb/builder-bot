@@ -78,6 +78,7 @@ import {
     getSecurityAuditEvents,
     recordSecurityAuditEvent,
 } from '../core/logic/security-audit.js';
+import { claimCheckoutConfirmationSession } from '../core/logic/checkout-confirmation-idempotency.js';
 import {
     evaluateOpsAlerts,
     getOpsDashboardSnapshot,
@@ -234,6 +235,7 @@ export const staticRouteDeps = {
     setEmergencyMarginGuardManualOverride,
     recordSecurityAuditEvent,
     getSecurityAuditEvents,
+    claimCheckoutConfirmationSession,
     recordAbuseSignal,
     getAbuseAnalytics,
     evaluateIncidentNotifications,

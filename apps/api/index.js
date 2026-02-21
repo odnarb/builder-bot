@@ -10,6 +10,7 @@ import { registerStripeRoutes } from './routes/stripe-routes.js';
 import { registerAiRoutes } from './routes/ai-routes.js';
 import { registerAdminRoutes } from './routes/admin-routes.js';
 import { registerConfigRoutes } from './routes/config-routes.js';
+import { createSecurityDeniedAuditMiddleware } from './middleware/security-denied-audit.js';
 
 const app = express();
 app.use(bodyParser.json());
@@ -21,6 +22,14 @@ const {
     asyncHandler,
 } = createAppContext();
 const { logger } = routeDeps;
+
+/**
+ * Capture and emit structured auth-denied audit events for JSON responses.
+ * This keeps authn/authz deny telemetry centralized across route modules.
+ */
+app.use(createSecurityDeniedAuditMiddleware({
+    recordSecurityAuditEvent: routeDeps.recordSecurityAuditEvent,
+}));
 
 // rewrite urls from /api to /
 if (process.env.NODE_ENV !== 'production') {
@@ -59,6 +68,7 @@ app.use(asyncHandler(async (req, res, next) => {
 app.use((err, req, res, next) => {
     const status = Number(err?.status || err?.statusCode || 0);
     if (status === 401 || err?.name === 'UnauthorizedError' || err?.name === 'InvalidTokenError') {
+        res.locals.securityAuditDeniedReason = err?.name || 'authn_denied';
         return res.status(401).json({
             error: 'Unauthorized',
             message: err?.message || 'Missing or invalid access token.',
@@ -66,6 +76,7 @@ app.use((err, req, res, next) => {
     }
 
     if (status === 403 || err?.name === 'InsufficientScopeError') {
+        res.locals.securityAuditDeniedReason = err?.name || 'authz_denied';
         return res.status(403).json({
             error: 'Forbidden',
             message: err?.message || 'Insufficient permissions.',

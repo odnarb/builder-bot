@@ -106,6 +106,7 @@ export function createRequireAdminAccess({ asyncHandler, getUserById, resolveTie
         const authPayload = req.auth?.payload;
         const userId = authPayload?.sub;
         if (!userId) {
+            res.locals.securityAuditDeniedReason = 'missing_admin_auth_subject';
             return res.status(401).json({ error: 'Authentication is required for admin access.' });
         }
 
@@ -118,6 +119,7 @@ export function createRequireAdminAccess({ asyncHandler, getUserById, resolveTie
             return next();
         }
         if (cachedFallbackTier && cachedFallbackTier !== 'admin') {
+            res.locals.securityAuditDeniedReason = 'admin_tier_required_cached';
             return res.status(403).json({ error: 'Admin access is required.' });
         }
 
@@ -128,6 +130,7 @@ export function createRequireAdminAccess({ asyncHandler, getUserById, resolveTie
             tier: fallbackTier,
         });
         if (fallbackTier !== 'admin') {
+            res.locals.securityAuditDeniedReason = 'admin_tier_required';
             return res.status(403).json({ error: 'Admin access is required.' });
         }
 

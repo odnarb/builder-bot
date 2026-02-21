@@ -8,6 +8,64 @@ import { executeCommands } from './execute-commands.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
 import { resolveCommanderUsername } from './player-identity.js';
 
+const DEFAULT_ALLOWED_WS_ORIGINS = Object.freeze([
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+  'http://127.0.0.1:4173',
+  'http://localhost:4173',
+]);
+
+function normalizeOrigin(origin) {
+  const rawOrigin = typeof origin === 'string' ? origin.trim() : '';
+  if (!rawOrigin) {
+    return null;
+  }
+
+  if (rawOrigin === 'null') {
+    return 'null';
+  }
+
+  try {
+    return new URL(rawOrigin).origin;
+  } catch {
+    return null;
+  }
+}
+
+export function parseAllowedWsOrigins(rawAllowedOrigins) {
+  const source = typeof rawAllowedOrigins === 'string' && rawAllowedOrigins.trim().length > 0
+    ? rawAllowedOrigins
+    : DEFAULT_ALLOWED_WS_ORIGINS.join(',');
+
+  const parsed = source
+    .split(',')
+    .map((entry) => normalizeOrigin(entry))
+    .filter(Boolean);
+
+  return new Set(parsed);
+}
+
+export function isAllowedWsOrigin({ request, allowedOrigins }) {
+  const originAllowlist = allowedOrigins instanceof Set
+    ? allowedOrigins
+    : parseAllowedWsOrigins(
+      Array.isArray(allowedOrigins)
+        ? allowedOrigins.join(',')
+        : String(allowedOrigins || ''),
+    );
+
+  if (originAllowlist.size === 0) {
+    return true;
+  }
+
+  const requestOrigin = normalizeOrigin(request?.headers?.origin);
+  if (!requestOrigin) {
+    return false;
+  }
+
+  return originAllowlist.has(requestOrigin);
+}
+
 export function resolveWsBuildPrompt(message) {
   if (!message || typeof message !== 'object') {
     return null;
@@ -61,9 +119,19 @@ export function isAuthorizedWsClient({ request, expectedAuthToken }) {
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
   const expectedWsAuthToken = String(process.env.AUTH_TOKEN || '').trim();
+  const allowedWsOrigins = parseAllowedWsOrigins(process.env.BOT_WS_ALLOWED_ORIGINS);
   const wss = new WebSocketServer({ host: '127.0.0.1', port: 3002 });
 
   wss.on('connection', (ws, request) => {
+    if (!isAllowedWsOrigin({ request, allowedOrigins: allowedWsOrigins })) {
+      ws.send(JSON.stringify({
+        type: 'ws_auth_error',
+        reason: 'origin_not_allowed',
+      }));
+      ws.close(1008, 'Origin not allowed');
+      return;
+    }
+
     if (!isAuthorizedWsClient({ request, expectedAuthToken: expectedWsAuthToken })) {
       ws.send(JSON.stringify({
         type: 'ws_auth_error',

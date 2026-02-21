@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import {
   isAuthorizedWsClient,
+  isAllowedWsOrigin,
+  parseAllowedWsOrigins,
   resolveWsBuildPrompt,
   resolveWsInstructionPlanPayload,
 } from '../apps/bot/ws-server.js';
@@ -51,4 +53,37 @@ test('isAuthorizedWsClient validates authToken query parameter', () => {
 
   assert.equal(authorized, true);
   assert.equal(rejected, false);
+});
+
+test('isAllowedWsOrigin allows configured local UI origins', () => {
+  const allowed = isAllowedWsOrigin({
+    request: {
+      headers: {
+        origin: 'http://localhost:5173',
+      },
+    },
+    allowedOrigins: parseAllowedWsOrigins('http://localhost:5173,http://127.0.0.1:5173'),
+  });
+
+  assert.equal(allowed, true);
+});
+
+test('isAllowedWsOrigin rejects missing or unapproved origin headers', () => {
+  const allowlist = parseAllowedWsOrigins('http://localhost:5173');
+
+  const missingOrigin = isAllowedWsOrigin({
+    request: { headers: {} },
+    allowedOrigins: allowlist,
+  });
+  const unapprovedOrigin = isAllowedWsOrigin({
+    request: {
+      headers: {
+        origin: 'http://malicious.example',
+      },
+    },
+    allowedOrigins: allowlist,
+  });
+
+  assert.equal(missingOrigin, false);
+  assert.equal(unapprovedOrigin, false);
 });

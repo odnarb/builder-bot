@@ -4,6 +4,7 @@ import test from 'node:test';
 import { registerStripeRoutes } from '../apps/api/routes/stripe-routes.js';
 
 function createDeps(overrides = {}) {
+  const claimedSessions = new Set();
   const stripeSession = {
     id: 'cs_test_123',
     status: 'complete',
@@ -54,6 +55,17 @@ function createDeps(overrides = {}) {
     recordTierUpgrade: async () => {},
     setRenewalPreference: () => {},
     getRenewalPreference: () => ({}),
+    claimCheckoutConfirmationSession: async ({ sessionId }) => {
+      const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+      if (!normalizedSessionId) {
+        return false;
+      }
+      if (claimedSessions.has(normalizedSessionId)) {
+        return false;
+      }
+      claimedSessions.add(normalizedSessionId);
+      return true;
+    },
     logger: {
       error: () => {},
       warn: () => {},
@@ -219,4 +231,28 @@ test('POST /stripe/confirm-checkout blocks replay after successful confirmation'
   assert.equal(secondRes.statusCode, 409);
   assert.match(secondRes.body.error, /already been processed/i);
   assert.equal(updateCalls, 1);
+});
+
+test('POST /stripe/confirm-checkout rejects when confirmation idempotency claim is denied', async () => {
+  const app = createMockApp();
+  let updateCalls = 0;
+  const deps = createDeps({
+    claimCheckoutConfirmationSession: async () => false,
+    updateUserTier: async () => {
+      updateCalls += 1;
+    },
+  });
+  registerStripeRoutes(app, deps);
+  const handlers = app.routes.get('POST /stripe/confirm-checkout');
+  const req = {
+    body: { sessionId: 'cs_already_processed_elsewhere' },
+    headers: {},
+  };
+  const res = createMockResponse();
+
+  await runRouteHandlers(handlers, req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.match(res.body.error, /already been processed/i);
+  assert.equal(updateCalls, 0);
 });

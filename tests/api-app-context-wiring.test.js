@@ -33,6 +33,7 @@ test('createAppContext wires route deps and middleware factories', async () => {
     assert.equal(typeof context.routeDeps.recordUsageMetering, 'function');
     assert.equal(typeof context.routeDeps.evaluateCurrentEmergencyMarginGuard, 'function');
     assert.equal(typeof context.routeDeps.createAiGetStructureHandler, 'function');
+    assert.equal(typeof context.routeDeps.claimCheckoutConfirmationSession, 'function');
     assert.equal(typeof context.routeDeps.logger?.info, 'function');
     assert.equal(context.routeDeps.FREE_TIER_THROTTLE_ERROR_CODE, 'FREE_TIER_THROTTLED_GUARD_ACTIVE');
   } finally {
