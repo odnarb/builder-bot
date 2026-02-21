@@ -18,11 +18,11 @@ import {
     getUserById,
     getUsersBuildById,
     getUsersBuilds,
+    nowTimestamp,
     updateUsersBuild,
     updateUsersSession,
     updateUserTier
 } from '../core/firestore/users.js';
-import { Timestamp } from '@google-cloud/firestore';
 import {
     getTierAiPolicy,
     getTierFeaturePolicy,
@@ -773,7 +773,7 @@ app.post('/user/signup', jwtCheck, asyncHandler(async (req, res) => {
             name,
             auth0LoginId,
             picture, tier: 'pending',
-            createdAt: Timestamp.now()
+            createdAt: nowTimestamp()
         }
 
         const created = await createUser({ user });
@@ -844,7 +844,7 @@ app.post('/user/session/:sessionId/build', jwtCheck, asyncHandler(async (req, re
     try {
         const newBuild = {
             ...build,
-            createdAt: Timestamp.now()
+            createdAt: nowTimestamp()
         }
         const docRef = await createUsersBuild({ userId, build: newBuild });
 
@@ -855,7 +855,7 @@ app.post('/user/session/:sessionId/build', jwtCheck, asyncHandler(async (req, re
                 buildId: docRef.id,
                 ...build
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
 
@@ -883,7 +883,7 @@ app.put('/user/session/:sessionId/build/:buildId', jwtCheck, asyncHandler(async 
                 buildId,
                 ...build
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
 
@@ -913,7 +913,7 @@ app.post('/user/session/:sessionId/build/:buildId/steps', jwtCheck, asyncHandler
                 buildId,
                 steps: steps.length
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
         await addStepsToUsersBuild({ userId, buildId, steps });
@@ -942,7 +942,7 @@ app.post('/user/session/:sessionId/build/:buildId/logs', jwtCheck, asyncHandler(
                 buildId,
                 logs: logs.length
             },
-            timestamp: Timestamp.now()
+            timestamp: nowTimestamp()
         };
         await addLogEntryToUsersSession({ userId, sessionId, log });
         await addLogsToUsersBuild({ userId, buildId, logs });
@@ -1380,7 +1380,7 @@ app.post('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => 
 
     const sessionStart = {
         ...session,
-        createdAt: Timestamp.now()
+        createdAt: nowTimestamp()
     }
 
     try {
@@ -1406,7 +1406,7 @@ app.put('/user/session/:sessionId', jwtCheck, asyncHandler(async (req, res) => {
 
     const sessionWithTimestamp = {
         ...session,
-        updatedAt: Timestamp.now()
+        updatedAt: nowTimestamp()
     }
 
     try {
@@ -1432,7 +1432,7 @@ app.post('/user/session/:sessionId/log', jwtCheck, asyncHandler(async (req, res)
         return res.status(400).json({ error: 'Missing userId, sessionId, or log' });
     }
 
-    const logWithTime = { ...log, timestamp: Timestamp.now() };
+    const logWithTime = { ...log, timestamp: nowTimestamp() };
 
     try {
         await addLogEntryToUsersSession({ userId, sessionId, log: logWithTime });
