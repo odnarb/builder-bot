@@ -321,6 +321,16 @@ const EMERGENCY_GUARD_EVAL_CACHE_TTL_MS = Math.max(
     5000,
     Number(process.env.EMERGENCY_GUARD_CACHE_TTL_MS || 45000),
 );
+const ADMIN_TIER_FALLBACK_CACHE_TTL_MS = Math.max(
+    30000,
+    Math.min(120000, Number(process.env.ADMIN_TIER_FALLBACK_CACHE_TTL_MS || 60000)),
+);
+const FREE_TIER_THROTTLE_ERROR_CODE = 'FREE_TIER_THROTTLED_GUARD_ACTIVE';
+const DEFAULT_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS = Math.max(
+    15,
+    Number(process.env.FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS || 60),
+);
+const MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS = 3600;
 const EMERGENCY_GUARD_FORCE_OFF_CONFIRMATION_CODE = 'DISABLE_GUARD_TEMPORARILY';
 const ADMIN_SCOPE_TOKENS = Object.freeze(['admin', 'admin:all', 'read:admin', 'write:admin', 'ops:admin']);
 const ADMIN_ROLE_CLAIM_KEYS = Object.freeze(
@@ -335,6 +345,7 @@ const emergencyGuardEvaluationRuntime = {
     lastResult: null,
     inFlightPromise: null,
 };
+const adminFallbackTierCache = new Map();
 
 /**
  * Basic moderation filter for user prompts.
@@ -359,6 +370,68 @@ function detectModerationViolation(prompt) {
  */
 function cloneJson(value) {
     return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Resolve cached fallback tier for admin authorization.
+ * @param {string} userId
+ * @returns {'free' | 'starter' | 'pro' | 'admin' | null}
+ */
+function getCachedAdminFallbackTier(userId) {
+    const entry = adminFallbackTierCache.get(userId);
+    if (!entry) {
+        return null;
+    }
+
+    if (entry.expiresAtMs <= Date.now()) {
+        adminFallbackTierCache.delete(userId);
+        return null;
+    }
+
+    return entry.tier;
+}
+
+/**
+ * Cache fallback tier for admin authorization.
+ * @param {{ userId: string, tier: 'free' | 'starter' | 'pro' | 'admin' }} params
+ */
+function setCachedAdminFallbackTier({ userId, tier }) {
+    adminFallbackTierCache.set(userId, {
+        tier,
+        expiresAtMs: Date.now() + ADMIN_TIER_FALLBACK_CACHE_TTL_MS,
+    });
+}
+
+/**
+ * Invalidate cached fallback tier for one user.
+ * @param {string | undefined | null} userId
+ */
+function invalidateAdminFallbackTierCache(userId) {
+    if (typeof userId === 'string' && userId.trim().length > 0) {
+        adminFallbackTierCache.delete(userId);
+    }
+}
+
+/**
+ * Resolve `Retry-After` in seconds for free-tier emergency throttles.
+ * @param {Awaited<ReturnType<typeof getEmergencyMarginGuardState>>} state
+ * @returns {number}
+ */
+function resolveFreeTierThrottleRetryAfterSeconds(state) {
+    const nowMs = Date.now();
+    const cooldownUntilMs = new Date(state?.cooldownUntil || 0).getTime();
+    if (Number.isFinite(cooldownUntilMs) && cooldownUntilMs > nowMs) {
+        const secondsUntilCooldownEnds = Math.ceil((cooldownUntilMs - nowMs) / 1000);
+        return Math.max(
+            15,
+            Math.min(MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS, secondsUntilCooldownEnds),
+        );
+    }
+
+    return Math.max(
+        15,
+        Math.min(MAX_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS, DEFAULT_FREE_TIER_THROTTLE_RETRY_AFTER_SECONDS),
+    );
 }
 
 /**
@@ -412,8 +485,21 @@ const requireAdminAccess = asyncHandler(async (req, res, next) => {
         return next();
     }
 
+    const cachedFallbackTier = getCachedAdminFallbackTier(userId);
+    if (cachedFallbackTier === 'admin') {
+        return next();
+    }
+    if (cachedFallbackTier && cachedFallbackTier !== 'admin') {
+        return res.status(403).json({ error: 'Admin access is required.' });
+    }
+
     const user = await getUserById({ userId });
-    if (resolveTier(user?.tier || 'free') !== 'admin') {
+    const fallbackTier = resolveTier(user?.tier || 'free');
+    setCachedAdminFallbackTier({
+        userId,
+        tier: fallbackTier,
+    });
+    if (fallbackTier !== 'admin') {
         return res.status(403).json({ error: 'Admin access is required.' });
     }
 
@@ -476,19 +562,28 @@ async function evaluateCurrentEmergencyMarginGuard({ force = false, now = new Da
                 now: nowDate,
             });
 
-            if (evaluation.transition?.activated) {
-                logger.warn('Emergency margin guard activated.', {
+            if (evaluation.transition) {
+                const from = evaluation.transition.activated ? 'NORMAL' : 'ACTIVE';
+                const to = evaluation.transition.activated ? 'ACTIVE' : 'NORMAL';
+                const reasonCodes = Array.isArray(evaluation.transition.reasonCodes) && evaluation.transition.reasonCodes.length > 0
+                    ? evaluation.transition.reasonCodes
+                    : ['none'];
+                const transitionLine = `GUARD_STATE_TRANSITION: ${from} -> ${to} reason=${reasonCodes.join(',')}`;
+                const transitionContext = {
                     month: marginReport.month,
-                    reasonCodes: evaluation.transition.reasonCodes,
+                    from,
+                    to,
+                    reasonCodes,
                     marginPercent,
                     tokenBurnLastHourUsd,
-                });
-            } else if (evaluation.transition?.deactivated) {
-                logger.info('Emergency margin guard deactivated.', {
-                    month: marginReport.month,
-                    marginPercent,
-                    tokenBurnLastHourUsd,
-                });
+                    cooldownUntil: evaluation.state.cooldownUntil,
+                    recoveryStreak: evaluation.state.recoveryStreak,
+                };
+                if (evaluation.transition.activated) {
+                    logger.warn(transitionLine, transitionContext);
+                } else {
+                    logger.info(transitionLine, transitionContext);
+                }
             }
 
             const result = {
@@ -720,6 +815,7 @@ app.post('/user/plan', jwtCheck, asyncHandler(async (req, res) => {
         }
 
         await updateUserTier({ userId, tier });
+        invalidateAdminFallbackTierCache(userId);
         if (fromTier !== tier) {
             await recordTierUpgrade({
                 userId,
@@ -1457,6 +1553,7 @@ app.post('/stripe/confirm-checkout', jwtCheck, asyncHandler(async (req, res) => 
     const user = await getUserById({ userId });
     const fromTier = resolveTier(user?.tier || 'free');
     await updateUserTier({ userId: user.id, tier: metadataTier });
+    invalidateAdminFallbackTierCache(userId);
     await recordTierUpgrade({
         userId,
         fromTier,
@@ -1517,6 +1614,7 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
     const emergencyGuardState = emergencyGuardEvaluation.state;
 
     if (shouldThrottleFreeTier({ tier, guardState: emergencyGuardState })) {
+        const retryAfterSeconds = resolveFreeTierThrottleRetryAfterSeconds(emergencyGuardState);
         await recordPreScaleRequestFailure({
             userKey: usageKey,
             tier,
@@ -1535,8 +1633,11 @@ app.post('/ai-get-structure', asyncHandler(async (req, res) => {
                 reasonCodes: emergencyGuardState.reasonCodes,
             },
         });
+        res.set('Retry-After', String(retryAfterSeconds));
         return res.status(429).json({
+            code: FREE_TIER_THROTTLE_ERROR_CODE,
             error: 'Free tier is temporarily throttled due to emergency capacity protection. Upgrade to Starter, Pro, or Admin for continued access.',
+            retryAfterSeconds,
             upgradeSuggested: true,
             emergencyGuard: {
                 active: emergencyGuardState.active,
@@ -2182,11 +2283,28 @@ app.get('/admin/pre-scale-telemetry', asyncHandler(async (req, res) => {
     const marginByTier = Object.fromEntries(
         marginRows.map((row) => [row.tier, { revenue: row.revenue, totalCost: row.totalCost }]),
     );
+    const [dashboard, emergencyGuard] = await Promise.all([
+        getPreScaleTelemetryDashboard({
+            month,
+            marginByTier,
+        }),
+        evaluateCurrentEmergencyMarginGuard(),
+    ]);
 
-    return res.json(await getPreScaleTelemetryDashboard({
-        month,
-        marginByTier,
-    }));
+    return res.json({
+        ...dashboard,
+        guard_state_effective: {
+            active: emergencyGuard.state.active,
+            source: emergencyGuard.state.source,
+            reason: emergencyGuard.state.reason,
+            reasonCodes: emergencyGuard.state.reasonCodes,
+            throttleFreeTier: emergencyGuard.state.throttleFreeTier,
+            forceThinSnapshots: emergencyGuard.state.forceThinSnapshots,
+            cooldownUntil: emergencyGuard.state.cooldownUntil,
+            recoveryStreak: emergencyGuard.state.recoveryStreak,
+            lastEvaluatedAt: emergencyGuard.state.lastEvaluatedAt,
+        },
+    });
 }));
 
 /**

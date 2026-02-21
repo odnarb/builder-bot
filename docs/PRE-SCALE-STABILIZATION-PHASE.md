@@ -80,6 +80,9 @@ Metrics returned by `POST /admin/pre-scale/simulate` and history at `GET /admin/
 - [x] Token burn spikes
 - [x] Failure rates
 
+Deterministic 3-scenario guard shakeout CLI:
+- [x] `npm --prefix apps/api run pre-scale:shakeout` (normal / active / recovery with validation assertions)
+
 Goal: Break the system before users do.
 
 ### 3.1 Global Emergency Margin Guard
@@ -96,7 +99,11 @@ Implemented via `apps/api/utils/emergency-margin-guard.js` and integrated in `ap
   - `GET /admin/emergency-guard`
   - `POST /admin/emergency-guard/override` (`force_on` / `force_off` / `clear`)
 - [x] Lock `/admin/emergency-guard`, `/admin/emergency-guard/override`, and `/admin/ops-alerts` behind JWT + admin authorization middleware
+- [x] Harden admin fallback tier check cache with bounded TTL (`30-120s`) and invalidate on tier changes (`/user/plan`, `/stripe/confirm-checkout`)
 - [x] Surface active guard alert in `GET /admin/ops-alerts` (`emergency_margin_guard_active`)
+- [x] Emit stable transition log line on state changes (`GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`)
+- [x] Include `guard_state_effective` in `GET /admin/pre-scale-telemetry` payload for operations context
+- [x] Return stable free-tier guard throttle contract (`429` + `Retry-After` + `code=FREE_TIER_THROTTLED_GUARD_ACTIVE`)
 - [x] Attach incident playbook for guard activation (`emergency_margin_guard_active` in `apps/api/utils/incident-manager.js`)
 - [x] Guard enforcement coverage verified across primary request path retries and admin simulation path (no separate queue worker path present in-repo)
 

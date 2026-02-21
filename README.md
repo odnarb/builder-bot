@@ -48,6 +48,18 @@ npm run dev:electron
 npm test
 ```
 
+## Ops Hardening
+- Emergency guard now emits transition logs on state changes:
+  - `GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`
+- Free-tier emergency throttles return stable API semantics:
+  - `429` with `Retry-After` header
+  - response `code: "FREE_TIER_THROTTLED_GUARD_ACTIVE"`
+- Pre-scale telemetry now includes `guard_state_effective` for current guard status.
+- Run deterministic normal/active/recovery shakeout:
+```bash
+npm --prefix apps/api run pre-scale:shakeout
+```
+
 ## New API Surfaces (Monolithic Cloud Run)
 - `POST /api/ai-get-structure` now returns:
   - `instructionPlan` (normalized actions schema)
