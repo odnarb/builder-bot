@@ -22,10 +22,43 @@ test('parsePrompt returns a 3x3 floor for floor prompts', () => {
   assert.ok(structure.every(block => block.y === 0));
 });
 
+test('parsePrompt supports sized material floors', () => {
+  const structure = parsePrompt('10x4 stone floor');
+  assert.equal(structure.length, 40);
+  assert.ok(structure.every(block => block.y === 0));
+  assert.ok(structure.every(block => block.block === 'stone'));
+});
+
 test('parsePrompt returns a vertical pillar for pillar prompts', () => {
   const structure = parsePrompt('pillar');
   assert.equal(structure.length, 5);
   assert.deepEqual(structure.map(block => block.y), [0, 1, 2, 3, 4]);
+});
+
+test('parsePrompt supports sized walls, bridges, stairs, and towers', () => {
+  const wall = parsePrompt('6 by 4 brick wall');
+  assert.equal(wall.length, 24);
+  assert.ok(wall.every(block => block.z === 0));
+  assert.ok(wall.every(block => block.block === 'bricks'));
+
+  const bridge = parsePrompt('8 by 2 wooden bridge');
+  assert.equal(bridge.length, 16);
+  assert.ok(bridge.every(block => block.y === 0));
+  assert.ok(bridge.every(block => block.block === 'oak_planks'));
+
+  const stairs = parsePrompt('3 wide 4 tall quartz stairs');
+  assert.equal(stairs.length, 12);
+  assert.ok(stairs.every(block => block.block === 'quartz_block'));
+
+  const tower = parsePrompt('4 by 6 sandstone tower');
+  assert.equal(tower.length, 72);
+  assert.ok(tower.every(block => block.block === 'sandstone'));
+});
+
+test('parsePrompt supports rectangular cuboids', () => {
+  const structure = parsePrompt('3x4x2 dirt box');
+  assert.equal(structure.length, 24);
+  assert.ok(structure.every(block => block.block === 'dirt'));
 });
 
 test('parsePrompt loads medium house template correctly from any working directory', () => {

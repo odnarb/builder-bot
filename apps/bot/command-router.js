@@ -11,6 +11,7 @@ import {
 import { executeCommands } from './execute-commands.js';
 import { runDecisionEngineBuild } from './decision-engine.js';
 import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
+import { createLocalBuildPlan } from './local-decision-planner.js';
 import { buildDecisionWorldContext, ensurePathfinderTelemetry } from './world-context.js';
 import { resolveCommanderUsername } from './player-identity.js';
 import {
@@ -450,8 +451,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           return;
         }
 
-        bot.chat(`📐 Asking AI to generate build for: ${prompt}...`);
-        console.log(`📐 Asking AI to generate build for: ${prompt}...`);
+        bot.chat(`📐 Planning build for: ${prompt}...`);
+        console.log(`📐 Planning build for: ${prompt}...`);
 
         const build = {
           type: "build",
@@ -473,7 +474,23 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         };
         const materialCache = new Set();
 
-        async function requestPlanSteps({ replanAttempt = 0, failureDigest = [] } = {}) {
+        async function requestPlanSteps({ replanAttempt = 0, failureDigest = [], allowLocal = true } = {}) {
+          if (allowLocal && replanAttempt === 0) {
+            const localPlan = createLocalBuildPlan({
+              prompt,
+              bot,
+              decisionPolicy,
+              buildOrigin,
+              buildStartOffset: BUILD_START_OFFSET,
+            });
+
+            if (localPlan) {
+              console.log(`📐 Using local build planner for prompt: ${prompt}`);
+              return localPlan;
+            }
+          }
+
+          bot.chat(`📐 Asking AI to generate build details...`);
           const aiPayload = await getStructureAndTagsFromAI({
             message: prompt,
             tier: normalizedTier,
@@ -511,6 +528,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
             steps: blocks,
             tags,
             actionCount: normalizedPlan.actions.length,
+            source: 'ai',
           };
         }
 
@@ -531,6 +549,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                 buildId,
                 build: {
                   event: "steps_parsed",
+                  source: initialPlan.source || 'ai',
                   blockCount: steps.length,
                   tags: initialTags,
                   actionCount: initialActionCount,
@@ -639,6 +658,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
               const patchPlan = await requestPlanSteps({
                 replanAttempt,
                 failureDigest,
+                allowLocal: false,
               });
 
               const patchPlacementCount = countPlacementSteps(patchPlan.steps);
@@ -655,6 +675,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                     build: {
                       event: 'patch_steps_parsed',
                       replanAttempt,
+                      source: patchPlan.source || 'ai',
                       blockCount: patchPlan.steps.length,
                       actionCount: patchPlan.actionCount,
                       tags: patchPlan.tags,
@@ -672,6 +693,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                 meta: {
                   replanAttempt,
                   actionCount: patchPlan.actionCount,
+                  source: patchPlan.source || 'ai',
                 },
               };
             },
