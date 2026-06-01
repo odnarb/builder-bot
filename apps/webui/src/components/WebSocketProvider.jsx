@@ -5,6 +5,7 @@ const RETRY_LIMIT = 100;
 
 export const WebSocketContext = createContext({
   messages: [],
+  isConnected: false,
   sendMessage: () => { },
 });
 
@@ -106,7 +107,7 @@ export default function WebSocketProvider({ children }) {
   };
 
   return (
-    <WebSocketContext.Provider value={{ messages, sendMessage }}>
+    <WebSocketContext.Provider value={{ messages, isConnected, sendMessage }}>
       {children}
     </WebSocketContext.Provider>
   );

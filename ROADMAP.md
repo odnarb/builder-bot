@@ -12,7 +12,7 @@ The core product is no longer in early roadmap state. Most original phases have 
 - AI build generation is tier-gated, token-governed, and context-aware.
 - Local-first deterministic build planning is implemented for common structured prompts, with local-vs-AI telemetry.
 - Stripe checkout, tier policy, build history, usage metering, ops alerts, abuse analytics, referrals, and community primitives exist.
-- The biggest remaining gaps are production hardening, polished UI coverage for admin/community features, full localization coverage, real-world integration testing, and broader local build-template coverage.
+- The biggest remaining gaps are production hardening, full localization coverage, real-world integration testing, Electron packaging/log streaming hardening, and broader local build-template coverage.
 
 ## Phase 0: Foundation and Setup
 
@@ -69,7 +69,7 @@ Status: Mostly done
 Implemented:
 - API app exists with route modules for AI, users, Stripe, admin, community, and config.
 - Web UI exists in `apps/webui`.
-- Dashboard includes prompt input, control panel, bot console, launch modal, plan selector, checkout success, and build history.
+- Dashboard has been replaced with a Figma-directed desktop control-center shell covering dashboard, launch, build, console, history, community, settings, and admin screens.
 - Admin-tier dashboard now includes a read-only operations panel for ops, alerts, margin, margin alerts, usage, overage, build-cost, emergency guard, pre-scale telemetry, performance, simulation history, conversion, attribution, referral analytics, incidents, abuse, and security audit snapshots.
 - Dashboard includes a basic community panel for linked accounts, rewards, referral summary/code creation, phrase packs, and marketplace listing visibility.
 - Dashboard includes an account panel for policy acceptance state, renewal preference, cancellation/refund ticket submission, and parental controls.
@@ -78,9 +78,9 @@ Implemented:
 - Build history retrieval and UI panel exist, including per-build decision-engine source, success, attempts, replans, local-vs-AI telemetry counters, and recent-build aggregate rollups.
 
 Remaining gaps:
-- Admin ops dashboards have a basic Web UI surface with read-only snapshots for the core admin endpoints, incident status filtering, incident resolution controls, and incident playbook drilldowns; polished workflows and high-risk operator controls are still pending.
-- Community/referral/marketplace features have a basic dashboard surface with referral redemption, phrase pack creation, listing creation, and marketplace listing browsing. Publishing, editing, moderation, and polished marketplace workflows are still pending.
-- Web UI localization has config scaffolding, a locale selector, and dictionary coverage for the main dashboard/build/admin surfaces, checkout success, launch modal, plan selector, and bot console. Website copy and translation review are still pending.
+- Admin ops dashboards have a redesigned Web UI surface with read-only snapshots and incident resolution. Polished drilldowns and high-risk operator controls are still pending.
+- Community/referral/marketplace features have a redesigned dashboard surface with referral redemption, phrase pack creation, listing creation, and marketplace listing browsing. Publishing, editing, moderation, and polished marketplace workflows are still pending.
+- The previous dashboard localization provider was removed during the Figma UI overhaul; translation coverage needs to be rebuilt against the new shell. Website copy and translation review are still pending.
 - Broader end-to-end browser tests are not present.
 
 Decision recorded:
@@ -122,7 +122,7 @@ Implemented:
 - Pre-scale simulation and telemetry exist.
 
 Remaining gaps:
-- Admin Web UI exposes read-only snapshots for these backend metrics, but it is not a polished operator console.
+- Admin Web UI exposes read-only snapshots for these backend metrics inside the redesigned shell, but it is not a fully polished operator console.
 - No external notification integration is wired in code, e.g. email, Slack, PagerDuty.
 - Admin runbook exists in `docs/ADMIN-RUNBOOK-2026-05-31.md`; provider-specific escalation and deployment-host steps remain pending.
 
@@ -189,8 +189,8 @@ Decision recorded:
 Status: Mixed
 
 Implemented:
-- Responsive dashboard layout and build history panel exist.
-- Dashboard locale selector exists for English, Spanish, Portuguese, and French.
+- Figma-directed responsive dashboard shell exists for the Electron/Web UI surface.
+- Locale selector was removed with the old UI and needs to be rebuilt for the new shell.
 - Campaign attribution endpoints exist.
 - Website and Electron app shells exist.
 
@@ -247,6 +247,7 @@ Remaining gaps:
    - Spanish,
    - Portuguese,
    - French,
+   - rebuild locale selector for the redesigned shell,
    - website string coverage,
    - translation review,
    - tests for config and fallback language behavior.
@@ -282,3 +283,17 @@ Implemented after the audit:
 - Expanded local deterministic templates to cover roads/paths, fences, tunnels, arches, roofs, simple farms, and rooms.
 - Expanded local deterministic templates to cover standalone doors/windows and simple wall openings.
 - Expanded local deterministic templates to cover simple gardens.
+
+## 2026-06-01 Figma UI Overhaul Pass
+
+Implemented:
+- Replaced the legacy Web UI composition with a Figma-directed desktop control-center shell.
+- Added redesigned dashboard, launch, build, console, history, community, settings, and admin screens in `apps/webui/src/App.jsx`.
+- Removed unused legacy visual components from `apps/webui/src/components`, keeping only non-visual WebSocket/API helpers.
+- Added Figma-derived BuilderBot theme tokens and component styling in `apps/webui/src/index.css`.
+
+Remaining:
+- Rebuild localization on top of the new shell.
+- Add Electron bot stdout/stderr log streaming into the Console screen.
+- Harden packaged Electron loading and bot process paths.
+- Human review needed for final visual polish and exact Figma fidelity.
