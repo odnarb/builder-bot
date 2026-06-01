@@ -2,7 +2,7 @@
 
 Audit date: 2026-05-31
 
-This roadmap was audited against the current codebase, tests, and the more detailed implementation log in `docs/ROADMAP.md`.
+This roadmap was audited against the current codebase, tests, and the more detailed implementation log archived at `docs/archive/ROADMAP.md`.
 
 ## Current Summary
 
@@ -256,7 +256,7 @@ Remaining gaps:
 - `apps/api/packages/prompt-parser/index.js` is staged from `packages/prompt-parser/index.js` by `npm test`; edit the package source first.
 - Firestore-backed persistence requires a working cloud identity or `GOOGLE_APPLICATION_CREDENTIALS`; otherwise some economics/persistence systems run in memory.
 - `apps/website/demo.mp4` is currently untracked in this worktree and was not part of this roadmap audit.
-- `docs/ROADMAP.md` remains the detailed historical implementation log; this root roadmap is the current product/status view.
+- `docs/archive/ROADMAP.md` remains the detailed historical implementation log; this root roadmap is the current product/status view.
 
 ## 2026-05-31 Follow-Through Pass
 
