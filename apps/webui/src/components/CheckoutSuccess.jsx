@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Spinner from './Spinner';
+import { useLocalization } from './LocalizationProvider';
 
 export default function CheckoutSuccess() {
     const [params] = useSearchParams();
     const { getAccessTokenSilently } = useAuth0();
+    const { t } = useLocalization();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
 
@@ -39,8 +41,8 @@ export default function CheckoutSuccess() {
     }, [params, navigate, getAccessTokenSilently]);
 
     return loading ? (
-        <Spinner text="Processing payment..." />
+        <Spinner text={t('checkout.processing')} />
     ) : (
-        <Spinner text="Payment processed! Redirecting..." />
+        <Spinner text={t('checkout.redirecting')} />
     );
 }

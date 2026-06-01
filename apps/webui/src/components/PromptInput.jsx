@@ -1,8 +1,10 @@
 import React, { useState, useContext } from 'react';
 import { WebSocketContext } from './WebSocketProvider';
+import { useLocalization } from './LocalizationProvider';
 
 export default function PromptInput() {
   const { sendMessage } = useContext(WebSocketContext);
+  const { t } = useLocalization();
   const [input, setInput] = useState('');
 
   const handleSubmit = (e) => {
@@ -25,7 +27,7 @@ export default function PromptInput() {
       <input
         type="text"
         className="flex-grow px-3 py-1 rounded bg-gray-800 text-white placeholder-gray-500"
-        placeholder="Enter command (e.g. build a cube)..."
+        placeholder={t('prompt.placeholder')}
         value={input}
         onChange={(e) => setInput(e.target.value)}
       />
@@ -33,7 +35,7 @@ export default function PromptInput() {
         type="submit"
         className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1 rounded"
       >
-        Send
+        {t('prompt.send')}
       </button>
     </form>
   );

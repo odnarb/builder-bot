@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
+import { useLocalization } from './LocalizationProvider';
 
 export default function PlanSelector({ onSelect }) {
     const { getAccessTokenSilently } = useAuth0();
+    const { t } = useLocalization();
     const [acceptedPolicies, setAcceptedPolicies] = useState(false);
     const [error, setError] = useState('');
 
@@ -13,7 +15,7 @@ export default function PlanSelector({ onSelect }) {
         try {
             setError('');
             if (!acceptedPolicies) {
-                setError('Please accept Terms and Privacy before choosing a plan.');
+                setError(t('plan.policyRequired'));
                 return;
             }
 
@@ -59,21 +61,28 @@ export default function PlanSelector({ onSelect }) {
 
             if (!res.ok) {
                 const body = await res.json().catch(() => ({}));
-                setError(body?.error || 'Failed to start checkout.');
+                setError(body?.error || t('plan.startCheckoutFailed'));
                 return;
             }
 
             const { url } = await res.json();
             window.location.href = url;
         } catch (requestError) {
-            setError(requestError?.message || 'Failed to choose plan.');
+            setError(requestError?.message || t('plan.chooseFailed'));
         }
     };
+
+    const plans = [
+        { name: 'Starter', tier: 'starter', price: '$4.99/mo', desc: t('plan.starterDescription') },
+        { name: 'Pro', tier: 'pro', price: '$12.99/mo', desc: t('plan.proDescription') },
+        { name: 'Admin', tier: 'admin', price: '$24.99/mo', desc: t('plan.adminDescription') },
+        { name: 'Free', tier: 'free', price: '$0', desc: t('plan.freeDescription') },
+    ];
 
     return (
         <div className="min-h-screen bg-gray-900 text-white p-8 flex flex-col items-center">
             <h2 className="text-3xl font-bold mb-6 text-green-400 text-center">
-                Welcome to BuilderBot! Choose Your Plan
+                {t('plan.choosePlan')}
             </h2>
 
             <label className="mb-4 flex max-w-2xl items-start gap-2 rounded border border-gray-700 bg-gray-800/60 p-3 text-sm text-gray-200">
@@ -84,18 +93,13 @@ export default function PlanSelector({ onSelect }) {
                     className="mt-1"
                 />
                 <span>
-                    I accept the Terms and Privacy policy ({termsVersion}).
+                    {t('plan.acceptPolicies')} ({termsVersion}).
                 </span>
             </label>
             {error && <div className="mb-4 text-sm text-red-300">{error}</div>}
 
             <div className="w-full max-w-7xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[
-                    { name: 'Starter', tier: 'starter', price: '$4.99/mo', desc: '500-block builds + templates' },
-                    { name: 'Pro', tier: 'pro', price: '$12.99/mo', desc: '2,000-block builds + AI chat', highlight: true },
-                    { name: 'Admin', tier: 'admin', price: '$24.99/mo', desc: 'Unlimited builds, full access' },
-                    { name: 'Free', tier: 'free', price: '$0', desc: 'Limited to 50-block builds' },
-                ].map(plan => {
+                {plans.map(plan => {
                     const isHighlight = plan.tier === 'pro';
 
                     return (
@@ -108,7 +112,7 @@ export default function PlanSelector({ onSelect }) {
                         >
                             {isHighlight && (
                                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-yellow-400 text-black px-2 py-1 text-xs font-bold rounded shadow">
-                                    ⭐ Best Value
+                                    {t('plan.bestValue')}
                                 </div>
                             )}
 
@@ -123,7 +127,7 @@ export default function PlanSelector({ onSelect }) {
                                     : 'bg-green-500 hover:bg-green-600 text-white'
                                     }`}
                             >
-                                {plan.tier === 'free' ? 'Continue Free' : 'Upgrade'}
+                                {plan.tier === 'free' ? t('plan.continueFree') : t('plan.upgrade')}
                             </button>
                         </div>
                     );

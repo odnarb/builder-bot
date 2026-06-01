@@ -89,6 +89,67 @@ function wall(width, height, block) {
   return structure
 }
 
+function wallWithOpening(width, height, block, openingType) {
+  const structure = []
+  const centerX = Math.floor(width / 2)
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      const isDoorOpening = openingType === 'door' && x === centerX && y < Math.min(2, height)
+      const isWindowOpening = openingType === 'window' && x === centerX && y === Math.min(2, height - 1)
+      if (isDoorOpening) {
+        if (y === 0) {
+          structure.push({ x, y, z: 0, block: 'oak_door' })
+        }
+        continue
+      }
+      if (isWindowOpening) {
+        structure.push({ x, y, z: 0, block: 'glass_pane' })
+        continue
+      }
+      structure.push({ x, y, z: 0, block })
+    }
+  }
+  return structure
+}
+
+function framedDoor(block) {
+  return [
+    { x: 0, y: 0, z: 0, block },
+    { x: 0, y: 1, z: 0, block },
+    { x: 0, y: 2, z: 0, block },
+    { x: 1, y: 2, z: 0, block },
+    { x: 2, y: 0, z: 0, block },
+    { x: 2, y: 1, z: 0, block },
+    { x: 2, y: 2, z: 0, block },
+    { x: 1, y: 0, z: 0, block: 'oak_door' },
+  ]
+}
+
+function framedWindow(block) {
+  return [
+    { x: 0, y: 0, z: 0, block },
+    { x: 1, y: 0, z: 0, block },
+    { x: 2, y: 0, z: 0, block },
+    { x: 0, y: 1, z: 0, block },
+    { x: 1, y: 1, z: 0, block: 'glass_pane' },
+    { x: 2, y: 1, z: 0, block },
+    { x: 0, y: 2, z: 0, block },
+    { x: 1, y: 2, z: 0, block },
+    { x: 2, y: 2, z: 0, block },
+  ]
+}
+
+function fence(length, block) {
+  const structure = []
+  for (let z = 0; z < length; z++) {
+    structure.push({ x: 0, y: 0, z, block })
+    if (z % 2 === 0) {
+      structure.push({ x: 0, y: 1, z, block })
+    }
+  }
+  return structure
+}
+
 function pillar(height, block) {
   const structure = []
   for (let y = 0; y < height; y++) {
@@ -121,6 +182,87 @@ function hollowTower(size, height, block) {
   return structure
 }
 
+function tunnel(width, height, length, block) {
+  const structure = []
+  for (let z = 0; z < length; z++) {
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        if (x === 0 || x === width - 1 || y === height - 1) {
+          structure.push({ x, y, z, block })
+        }
+      }
+    }
+  }
+  return structure
+}
+
+function arch(width, height, block) {
+  const structure = []
+  for (let y = 0; y < height; y++) {
+    structure.push({ x: 0, y, z: 0, block })
+    structure.push({ x: width - 1, y, z: 0, block })
+  }
+  for (let x = 0; x < width; x++) {
+    structure.push({ x, y: height - 1, z: 0, block })
+  }
+  return structure
+}
+
+function simpleRoof(width, length, block) {
+  const structure = []
+  const levels = Math.max(1, Math.ceil(width / 2))
+  for (let y = 0; y < levels; y++) {
+    for (let x = y; x < width - y; x++) {
+      for (let z = 0; z < length; z++) {
+        if (x === y || x === width - y - 1 || y === levels - 1) {
+          structure.push({ x, y, z, block })
+        }
+      }
+    }
+  }
+  return structure
+}
+
+function simpleFarm(width, length) {
+  const structure = []
+  for (let x = 0; x < width; x++) {
+    for (let z = 0; z < length; z++) {
+      const isBorder = x === 0 || z === 0 || x === width - 1 || z === length - 1
+      const block = isBorder ? 'oak_planks' : (x % 2 === 0 ? 'farmland' : 'water')
+      structure.push({ x, y: 0, z, block })
+    }
+  }
+  return structure
+}
+
+function simpleGarden(width, length) {
+  const structure = []
+  const centerX = Math.floor(width / 2)
+  const centerZ = Math.floor(length / 2)
+  for (let x = 0; x < width; x++) {
+    for (let z = 0; z < length; z++) {
+      const isBorder = x === 0 || z === 0 || x === width - 1 || z === length - 1
+      const isCenter = x === centerX && z === centerZ
+      const block = isBorder ? 'oak_planks' : (isCenter ? 'water' : 'grass_block')
+      structure.push({ x, y: 0, z, block })
+    }
+  }
+  return structure
+}
+
+function simpleRoom(width, length, block) {
+  const structure = rectangle(width, length, block)
+  for (let x = 0; x < width; x++) {
+    structure.push({ x, y: 1, z: 0, block })
+    structure.push({ x, y: 1, z: length - 1, block })
+  }
+  for (let z = 1; z < length - 1; z++) {
+    structure.push({ x: 0, y: 1, z, block })
+    structure.push({ x: width - 1, y: 1, z, block })
+  }
+  return structure
+}
+
 export function parsePrompt(prompt) {
   const lower = String(prompt || '').toLowerCase()
   const dimensions = parseDimensions(lower)
@@ -130,6 +272,72 @@ export function parsePrompt(prompt) {
     const length = parseMeasure(lower, 'long|length', dimensions[0] || 8)
     const width = parseMeasure(lower, 'wide|width', dimensions[1] || 3)
     return rectangle(width, length, resolveMaterial(lower, 'oak_planks'))
+  }
+
+  if (lower.includes('door') || lower.includes('doorway')) {
+    if (lower.includes('wall')) {
+      const width = parseMeasure(lower, 'wide|long|length|width', dimensions[0] || 5)
+      const height = parseMeasure(lower, 'tall|high|height', dimensions[1] || 3)
+      return wallWithOpening(width, height, material, 'door')
+    }
+    return framedDoor(resolveMaterial(lower, 'oak_planks'))
+  }
+
+  if (lower.includes('window')) {
+    if (lower.includes('wall')) {
+      const width = parseMeasure(lower, 'wide|long|length|width', dimensions[0] || 5)
+      const height = parseMeasure(lower, 'tall|high|height', dimensions[1] || 3)
+      return wallWithOpening(width, height, material, 'window')
+    }
+    return framedWindow(resolveMaterial(lower, 'oak_planks'))
+  }
+
+  if (lower.includes('road') || lower.includes('path')) {
+    const length = parseMeasure(lower, 'long|length', dimensions[0] || 8)
+    const width = parseMeasure(lower, 'wide|width', dimensions[1] || 3)
+    return rectangle(width, length, resolveMaterial(lower, 'stone_bricks'))
+  }
+
+  if (lower.includes('farm')) {
+    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 7)
+    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
+    return simpleFarm(width, length)
+  }
+
+  if (lower.includes('garden')) {
+    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 7)
+    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
+    return simpleGarden(width, length)
+  }
+
+  if (lower.includes('fence')) {
+    const length = parseMeasure(lower, 'long|length', dimensions[0] || 8)
+    return fence(length, resolveMaterial(lower, 'oak_planks'))
+  }
+
+  if (lower.includes('tunnel')) {
+    const length = parseMeasure(lower, 'long|length', dimensions[0] || 8)
+    const width = parseMeasure(lower, 'wide|width', dimensions[1] || 3)
+    const height = parseMeasure(lower, 'tall|high|height', dimensions[2] || 3)
+    return tunnel(width, height, length, material)
+  }
+
+  if (lower.includes('arch')) {
+    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 5)
+    const height = parseMeasure(lower, 'tall|high|height', dimensions[1] || 4)
+    return arch(width, height, material)
+  }
+
+  if (lower.includes('roof')) {
+    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 5)
+    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
+    return simpleRoof(width, length, resolveMaterial(lower, 'oak_planks'))
+  }
+
+  if (lower.includes('room')) {
+    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 5)
+    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
+    return simpleRoom(width, length, material)
   }
 
   if (lower.includes('stairs') || lower.includes('staircase') || lower.includes('steps')) {

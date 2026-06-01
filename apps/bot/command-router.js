@@ -10,6 +10,7 @@ import {
 } from '../api/config/tier-policy.js';
 import { executeCommands } from './execute-commands.js';
 import { runDecisionEngineBuild } from './decision-engine.js';
+import { createDecisionTelemetryScope } from './decision-telemetry.js';
 import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
 import { createLocalBuildPlan } from './local-decision-planner.js';
 import { buildDecisionWorldContext, ensurePathfinderTelemetry } from './world-context.js';
@@ -535,12 +536,16 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         let steps = [];
         let initialTags = [];
         let initialActionCount = 0;
+        let initialPlanSource = 'ai';
+        const decisionTelemetryScope = createDecisionTelemetryScope();
 
         try {
           const initialPlan = await requestPlanSteps();
           steps = initialPlan.steps;
           initialTags = initialPlan.tags;
           initialActionCount = initialPlan.actionCount;
+          initialPlanSource = initialPlan.source || 'ai';
+          decisionTelemetryScope.recordPlanSource(initialPlanSource);
 
           if (buildId) {
             await runBestEffortPersistence(
@@ -549,7 +554,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                 buildId,
                 build: {
                   event: "steps_parsed",
-                  source: initialPlan.source || 'ai',
+                  source: initialPlanSource,
                   blockCount: steps.length,
                   tags: initialTags,
                   actionCount: initialActionCount,
@@ -660,6 +665,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                 failureDigest,
                 allowLocal: false,
               });
+              decisionTelemetryScope.recordPlanSource(patchPlan.source || 'ai', { isPatch: true });
 
               const patchPlacementCount = countPlacementSteps(patchPlan.steps);
               if (overTierBlockLimit({ commander, numBlocks: patchPlacementCount })) {
@@ -706,6 +712,11 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
             bot.chat(`⚠️ Build failed after ${decisionResult.attempts.length} attempt(s).`);
             console.warn(`⚠️ Build failed after retries. reason=${decisionResult.failureReason || 'unknown'}`);
           }
+          decisionTelemetryScope.recordBuildOutcome({
+            source: initialPlanSource,
+            success: decisionResult.success,
+          });
+          const decisionTelemetry = decisionTelemetryScope.getSnapshot();
 
           if (buildId) {
             await runBestEffortPersistence(
@@ -718,6 +729,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                   attempts: decisionResult.attempts.length,
                   replans: decisionResult.replanCount,
                   failureReason: decisionResult.failureReason || null,
+                  planSource: initialPlanSource,
+                  decisionTelemetry,
                 },
               })
             );

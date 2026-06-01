@@ -1,0 +1,35 @@
+/* BuilderBot theme variables */
+:root,
+[data-theme="dark"] {
+  --bb-bg: #0e0e11;
+  --bb-bar: #111113;
+  --bb-surface: #16161a;
+  --bb-input: #1a1a1f;
+  --bb-raised: #1e1e22;
+  --bb-hover: #27272d;
+  --bb-selected: #1e1e28;
+  --bb-border: #222226;
+  --bb-border2: #2a2a30;
+  --bb-text1: #e4e4e7;
+  --bb-text2: #a1a1aa;
+  --bb-text3: #71717a;
+  --bb-text4: #52525b;
+  --bb-divider: #1e1e22;
+}
+
+[data-theme="light"] {
+  --bb-bg: #f0f2f5;
+  --bb-bar: #e4e7ee;
+  --bb-surface: #ffffff;
+  --bb-input: #f5f6f9;
+  --bb-raised: #edf0f7;
+  --bb-hover: #e2e5ed;
+  --bb-selected: #e5e8f0;
+  --bb-border: #d5d9e4;
+  --bb-border2: #c4c9d8;
+  --bb-text1: #1a1d2e;
+  --bb-text2: #3d4663;
+  --bb-text3: #6b7490;
+  --bb-text4: #9ba3bb;
+  --bb-divider: #e8eaf0;
+}

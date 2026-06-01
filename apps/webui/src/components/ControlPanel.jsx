@@ -2,10 +2,12 @@ import React, { useContext, useEffect, useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { WebSocketContext } from './WebSocketProvider';
 import LaunchBotModal from './LaunchBotModal';
+import { useLocalization } from './LocalizationProvider';
 
 export default function ControlPanel() {
   const { sendMessage } = useContext(WebSocketContext);
   const { user, getAccessTokenSilently } = useAuth0();
+  const { t } = useLocalization();
   const [showLaunchModal, setShowLaunchModal] = useState(false);
   const [authToken, setAuthToken] = useState(null);
   const [botStatus, setBotStatus] = useState('offline');
@@ -124,7 +126,7 @@ export default function ControlPanel() {
 
       <div className="flex items-center space-x-2">
         <div className={`w-3 h-3 rounded-full ${statusColor}`} />
-        <span className="text-sm text-gray-300">Status: {statusLabel}</span>
+        <span className="text-sm text-gray-300">{t('control.status')}: {statusLabel}</span>
       </div>
 
       <div className="space-x-2">

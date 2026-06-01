@@ -61,6 +61,65 @@ test('parsePrompt supports rectangular cuboids', () => {
   assert.ok(structure.every(block => block.block === 'dirt'));
 });
 
+test('parsePrompt supports simple roads, fences, tunnels, arches, roofs, farms, gardens, and rooms', () => {
+  const road = parsePrompt('6 long 2 wide road');
+  assert.equal(road.length, 12);
+  assert.ok(road.every(block => block.block === 'stone_bricks'));
+
+  const fence = parsePrompt('5 long fence');
+  assert.equal(fence.length, 8);
+  assert.ok(fence.some(block => block.y === 1));
+
+  const tunnel = parsePrompt('4 long 3 wide 3 tall stone tunnel');
+  assert.equal(tunnel.length, 28);
+  assert.ok(tunnel.every(block => block.block === 'stone'));
+
+  const arch = parsePrompt('5 wide 4 tall brick arch');
+  assert.equal(arch.length, 13);
+  assert.ok(arch.every(block => block.block === 'bricks'));
+
+  const roof = parsePrompt('5 by 4 wooden roof');
+  assert.equal(roof.length > 0, true);
+  assert.ok(roof.every(block => block.block === 'oak_planks'));
+
+  const farm = parsePrompt('5 by 5 farm');
+  assert.equal(farm.length, 25);
+  assert.ok(farm.some(block => block.block === 'farmland'));
+  assert.ok(farm.some(block => block.block === 'water'));
+
+  const garden = parsePrompt('5 by 5 garden');
+  assert.equal(garden.length, 25);
+  assert.ok(garden.some(block => block.block === 'grass_block'));
+  assert.ok(garden.some(block => block.block === 'water'));
+  assert.ok(garden.some(block => block.block === 'oak_planks'));
+
+  const room = parsePrompt('4 by 4 quartz room');
+  assert.equal(room.length, 28);
+  assert.ok(room.every(block => block.block === 'quartz_block'));
+});
+
+test('parsePrompt supports deterministic doors and windows', () => {
+  const door = parsePrompt('wooden door');
+  assert.equal(door.length, 8);
+  assert.equal(door.filter(block => block.block === 'oak_door').length, 1);
+  assert.ok(door.some(block => block.x === 1 && block.y === 0));
+
+  const window = parsePrompt('stone window');
+  assert.equal(window.length, 9);
+  assert.equal(window.filter(block => block.block === 'glass_pane').length, 1);
+  assert.ok(window.some(block => block.x === 1 && block.y === 1));
+
+  const wallWithDoor = parsePrompt('5 wide 3 tall brick wall with door');
+  assert.equal(wallWithDoor.length, 14);
+  assert.equal(wallWithDoor.filter(block => block.block === 'oak_door').length, 1);
+  assert.ok(!wallWithDoor.some(block => block.x === 2 && block.y === 1));
+
+  const wallWithWindow = parsePrompt('5 wide 3 tall quartz wall with window');
+  assert.equal(wallWithWindow.length, 15);
+  assert.equal(wallWithWindow.filter(block => block.block === 'glass_pane').length, 1);
+  assert.ok(wallWithWindow.some(block => block.x === 2 && block.y === 2 && block.block === 'glass_pane'));
+});
+
 test('parsePrompt loads medium house template correctly from any working directory', () => {
   const originalCwd = process.cwd();
   process.chdir(path.resolve('apps'));

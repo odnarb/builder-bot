@@ -1,8 +1,10 @@
 import React, { useContext, useState } from 'react';
 import { WebSocketContext } from './WebSocketProvider';
+import { useLocalization } from './LocalizationProvider';
 
 export default function BotConsole() {
   const { messages, sendMessage } = useContext(WebSocketContext);
+  const { t } = useLocalization();
   const [chatControlEnabled, setChatControlEnabled] = useState(true);
   const [showMoveToModal, setShowMoveToModal] = useState(false);
   const [coords, setCoords] = useState({ x: '', y: '', z: '' });
@@ -34,35 +36,34 @@ export default function BotConsole() {
             onChange={() => setChatControlEnabled(!chatControlEnabled)}
             className="form-checkbox"
           />
-          Enable Chat Control
+          {t('console.chatControl')}
         </label>
         <div className="flex gap-2">
           <button
             className="bg-blue-700 hover:bg-blue-800 px-3 py-1 text-white text-xs rounded"
             onClick={() => handleCommand('come here')}
           >
-            👣 Follow
+            {t('console.follow')}
           </button>
           <button
             className="bg-yellow-600 hover:bg-yellow-700 px-3 py-1 text-white text-xs rounded"
             onClick={() => handleCommand('stop')}
           >
-            ✋ Stop
+            {t('console.stop')}
           </button>
           <button
             className="bg-indigo-700 hover:bg-indigo-800 px-3 py-1 text-white text-xs rounded"
             onClick={() => setShowMoveToModal(true)}
           >
-            🧭 Move To
+            {t('console.moveTo')}
           </button>
         </div>
       </div>
 
       {/* Chat Feed */}
       <div className="bg-gray-900 text-green-300 font-mono p-4 rounded h-64 overflow-y-auto text-sm shadow-inner">
-        {messages.length === 0 && <div className="text-gray-500">No bot activity yet.</div>}
+        {messages.length === 0 && <div className="text-gray-500">{t('console.activityEmpty')}</div>}
         {messages.map((msg, idx) => {
-          console.log('message rendering', msg);
           switch (msg.type) {
             case 'chat_feed': {
               const time = new Date(msg.timestamp).toLocaleTimeString();
@@ -73,27 +74,27 @@ export default function BotConsole() {
               );
             }
             case 'moving_to':
-              return <div key={idx}>🚶 Moving to ({msg.x}, {msg.y}, {msg.z})</div>;
+              return <div key={idx}>{t('console.movingTo')} ({msg.x}, {msg.y}, {msg.z})</div>;
 
             case 'move_to': {
               const time = new Date(msg.timestamp || Date.now()).toLocaleTimeString();
               return (
                 <div key={idx}>
-                  🕒 <span className="text-gray-400">{time}</span> 🚶 Move to <code>({msg.x}, {msg.y}, {msg.z})</code>
+                  🕒 <span className="text-gray-400">{time}</span> {t('console.moveTo')} <code>({msg.x}, {msg.y}, {msg.z})</code>
                 </div>
               );
             }
 
             case 'goal_reached':
-              return <div key={idx}>✅ Reached goal at ({msg.x}, {msg.y}, {msg.z})</div>;
+              return <div key={idx}>{t('console.reachedGoal')} ({msg.x}, {msg.y}, {msg.z})</div>;
 
             case 'block_placed':
-              return <div key={idx}>🧱 Placed {msg.block} at ({msg.x}, {msg.y}, {msg.z})</div>;
+              return <div key={idx}>{t('console.placed')} {msg.block} at ({msg.x}, {msg.y}, {msg.z})</div>;
 
             case 'bot_position':
               return (
                 <div key={idx} className="text-blue-300">
-                  📍 Bot position: ({msg.position.x}, {msg.position.y}, {msg.position.z})
+                  {t('console.botPosition')}: ({msg.position.x}, {msg.position.y}, {msg.position.z})
                 </div>
               );
 
@@ -104,7 +105,7 @@ export default function BotConsole() {
               }, {});
               return (
                 <div key={idx} className="text-yellow-300">
-                  🎒 Inventory:
+                  {t('console.inventory')}:
                   <ul className="ml-2 list-disc list-inside">
                     {Object.entries(counts).map(([block, count]) => (
                       <li key={block}>
@@ -119,7 +120,7 @@ export default function BotConsole() {
             case 'nearby_blocks': {
               return (
                 <div key={idx} className="text-cyan-300">
-                  🌍 Nearby Blocks:
+                  {t('console.blocksNearby')}:
                   <ul className="ml-2 list-disc list-inside">
                     {msg.blocks.map((block, i) => (
                       <li key={i}>
@@ -144,7 +145,7 @@ export default function BotConsole() {
       {showMoveToModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-white text-black p-4 rounded shadow-lg w-64 space-y-2">
-            <h3 className="text-lg font-bold">Enter Coordinates</h3>
+            <h3 className="text-lg font-bold">{t('console.coordinates')}</h3>
             <input
               type="number"
               placeholder="X"
@@ -171,13 +172,13 @@ export default function BotConsole() {
                 onClick={handleMoveTo}
                 className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded"
               >
-                Go
+                {t('console.go')}
               </button>
               <button
                 onClick={() => setShowMoveToModal(false)}
                 className="bg-gray-400 hover:bg-gray-500 text-black px-3 py-1 rounded"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
             </div>
           </div>

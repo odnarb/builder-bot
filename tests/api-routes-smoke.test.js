@@ -121,6 +121,29 @@ test('GET /admin/ops-dashboard requires admin auth', async () => {
   }
 });
 
+test('read-only admin dashboard endpoints require auth', async () => {
+  const server = await startServer();
+  const paths = [
+    '/admin/margin-alerts',
+    '/admin/emergency-guard',
+    '/admin/pre-scale-telemetry',
+    '/admin/performance-profile',
+    '/admin/pre-scale/simulations',
+    '/admin/conversion-funnel',
+    '/admin/analytics/attribution',
+    '/admin/analytics/referrals',
+  ];
+
+  try {
+    for (const path of paths) {
+      const response = await fetch(`${server.baseUrl}${path}`);
+      assert.equal(response.status, 401, path);
+    }
+  } finally {
+    await server.close();
+  }
+});
+
 test('GET /config/skus returns catalog shape', async () => {
   const server = await startServer();
 
@@ -130,6 +153,21 @@ test('GET /config/skus returns catalog shape', async () => {
 
     assert.equal(response.status, 200);
     assert.ok(Array.isArray(payload.skus));
+  } finally {
+    await server.close();
+  }
+});
+
+test('GET /config/localization returns supported UI locales', async () => {
+  const server = await startServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/config/localization`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.defaultLocale, 'en');
+    assert.deepEqual(payload.supportedLocales, ['en', 'es', 'pt', 'fr']);
   } finally {
     await server.close();
   }
