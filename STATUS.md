@@ -81,3 +81,13 @@ These are no longer active docs:
 - production readiness checklist,
 - integration test scenarios,
 - marketing plan comparison.
+
+
+-----
+
+TODO:
+Electron app / UI
+---------------------
+Full-screen mode seems busted. There's some weird offset applied when in fullscreen mode. Could be stretching the view or something and therefore the click layer is misaligned from the actual visual layer.
+
+Make sure we can troubleshoot a local builder bot session completely. I want to be able to have you look at console logs and build logs to see what happened from end to end.
