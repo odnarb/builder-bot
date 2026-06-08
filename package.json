@@ -13,9 +13,11 @@
     "check:security-audit": "node scripts/security-audit-gate.mjs",
     "check:security": "npm run check:security-audit && npm run check:secrets && npm run check:routes-security",
     "stage:shared-core": "node scripts/stage-shared-core.mjs",
+    "build": "node scripts/start-local-stack.mjs",
+    "dev:local-stack": "node scripts/run-local-stack-task.mjs",
     "dev": "node apps/cli/index.js",
     "dev:bot": "nodemon --ignore 'minecraft-ai-dashboard/*' --ignore 'infra/*' apps/bot/index.js",
-    "dev:electron": "electron apps/electron/main.js"
+    "dev:electron": "node scripts/start-electron-dev.mjs"
   },
   "keywords": [],
   "author": "",
@@ -23,6 +25,7 @@
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
     "@google-cloud/firestore": "^7.11.6",
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^17.2.0",
     "mineflayer": "^4.30.0",
     "mineflayer-pathfinder": "^2.4.5",

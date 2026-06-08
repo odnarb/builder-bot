@@ -1,111 +1,72 @@
-# 🤖 BuilderBot (Free Tier Available)
+# BuilderBot CurseForge Description
 
-**Build smarter inside Minecraft with BuilderBot --- your AI-powered
-building companion.**\
-Type what you want to build, and BuilderBot turns it into real in-game
-structures using natural language.
+Status: Draft copy.
 
-No complicated commands. No manual block-by-block work.\
-Just describe it --- and watch it build.
+Do not publish this until local mode is finished and tested.
 
-------------------------------------------------------------------------
+## Short Description
+BuilderBot is a Minecraft building helper that lets you describe what you want, then helps build it in-game.
 
-## 🆓 Free Tier
+Example:
 
-BuilderBot includes a free tier so anyone can try it:
+```txt
+build a stone tower with windows
+```
 
--   ✅ Generate builds from natural language\
-    *("Build a stone house with windows")*\
--   ✅ Supports **up to 50 blocks per build**
--   ✅ Web UI + in-game chat control
--   ✅ Works in **singleplayer and multiplayer**
--   ✅ No account required to get started
+## Long Description
+BuilderBot helps Minecraft players build faster.
 
-> The Free tier is perfect for testing ideas and building small
-> projects.
+Instead of placing every block by hand, you can type a simple prompt. BuilderBot turns that prompt into a build plan, sends a bot into the world, and places the blocks for you.
 
-------------------------------------------------------------------------
+BuilderBot is being built as a free local-first tool. The goal is simple:
 
-## 🚀 Build Bigger with Premium Plans
+- download it,
+- run it yourself,
+- build for free,
+- keep your local data on your own machine.
 
-Need larger builds or more usage?
+## What You Can Do
+- Build from normal language prompts.
+- Use simple prompts like houses, towers, paths, walls, farms, bridges, and gardens.
+- Let local code handle common builds without needing AI every time.
+- Use AI for harder or more creative prompts when configured.
+- Control the bot from a Web UI.
+- Review build history when local storage is enabled.
 
-BuilderBot offers optional paid plans for serious builders and server
-owners.
+## Example Prompts
+```txt
+build a small oak house
+build a 10 by 4 stone floor
+build a wooden bridge
+build a garden with paths
+build a tower with windows
+```
 
-### Premium unlocks include:
+## Current Project Note
+BuilderBot is still under active development.
 
--   🔓 Larger build sizes (500+, 2,000+, and beyond)
--   ⚡ More monthly build requests
--   🔁 Multiple builds running at once
--   🧠 Command block support (Pro & Admin tiers)
--   📜 Build history and saved plans
--   📈 Priority support
+The project is moving toward free local running with local SQLite storage. Some current development builds may still need extra API setup until that work is complete.
 
-> Upgrades are optional and designed for players who want to go further
-> --- bigger builds, higher limits, and more advanced control.
+Check `STATUS.md` before publishing this description.
 
-------------------------------------------------------------------------
+## Requirements
+BuilderBot may need:
 
-## ⚠️ Requirements
+- a Minecraft world or server,
+- permissions for bot actions,
+- creative mode for the smoothest builds,
+- a running BuilderBot API,
+- a model provider key if AI features are enabled.
 
-To run properly, BuilderBot currently requires:
+## Feedback Wanted
+Helpful feedback includes:
 
--   🔓 Cheats enabled\
--   🛡️ OP permissions (for `/give` and automation commands)\
--   🎨 Creative mode recommended *(Survival support improving over
-    time)*
+- prompts that do not build correctly,
+- bugs from singleplayer or multiplayer use,
+- server setup issues,
+- ideas for new local build templates,
+- reports about confusing UI or setup steps.
 
-------------------------------------------------------------------------
-
-## 📦 Installation
-
-1.  Install Forge + required dependencies\
-2.  Drop the BuilderBot `.jar` into your `mods` folder\
-3.  Launch Minecraft\
-4.  Open the BuilderBot dashboard and connect\
-5.  Start building from the UI or chat
-
-------------------------------------------------------------------------
-
-## ❓ Need Help?
-
--   🌐 Support: https://mcbuilderbot.com/support\
--   💬 Discord: https://discord.gg/mcbuilderbot
-
-------------------------------------------------------------------------
-
-## 🛠️ Community & Contributions
-
-BuilderBot started as a passion project --- and the community is still a
-huge part of its future.
-
-We welcome:
-
--   🐛 Bug reports\
--   💡 Feature suggestions\
--   🧪 Multiplayer testing feedback\
--   🌍 Server owner insights
-
-BuilderBot continues to evolve with community feedback and real-world use.
-
-While BuilderBot now includes paid plans to support ongoing development and hosting costs, the mission remains the same:
-
-**Make building in Minecraft faster, smarter, and more creative.**
-
-------------------------------------------------------------------------
-
-## ❤️ The Vision
-
-BuilderBot isn't just about automation.
-
-It's about:
-
--   Helping players build ideas they couldn't build alone
--   Empowering creativity
--   Growing a shared ecosystem of builders
-
-Whether you're testing small ideas on Free or running massive builds on
-Pro --- you're part of the BuilderBot story.
-
-**Let's build something amazing --- block by block.**
+## Links
+- Website: https://mcbuilderbot.com
+- Discord: https://discord.gg/mcbuilderbot

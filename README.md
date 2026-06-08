@@ -1,22 +1,63 @@
-# Minecraft AI Agent
-Natural-language Minecraft builder bot with API, Web UI, and Electron control app.
+# BuilderBot
 
-## Prerequisites
+BuilderBot is a Minecraft building bot.
+
+You type a normal sentence, and BuilderBot tries to build it in Minecraft.
+
+Example:
+
+```txt
+build a cobblestone tower
+```
+
+Current project status is in `STATUS.md`.
+
+## What Is In This Repo
+- API server
+- Web UI
+- Electron desktop wrapper
+- Minecraft bot
+- Shared build logic
+- Local prompt parser
+- Stripe billing code for hosted mode
+
+## What Is Being Worked On Now
+BuilderBot is moving to two modes:
+
+| Mode | What it means |
+|---|---|
+| `local` | Run it yourself for free. No Stripe or Auth0. |
+| `hosted` | Hosted app with Stripe payment checks. |
+
+Local mode is not fully finished yet. Auth0 is no longer required for local API identity, but some local data paths still need SQLite wiring.
+
+The plan is in:
+
+```txt
+docs/HOSTED-BILLING-AND-LOCAL-DB-PLAN.md
+```
+
+## Requirements
 - Node.js 22+
-- Java 17+ (for Paper server)
-- `k.json` in repo root for local Firestore-backed API runs
-- `.env` configured for API/Auth0/Stripe/OpenAI where needed
+- Java 17+ for a Paper Minecraft server
+- Auth0/Stripe env values for hosted-style API flows
+- OpenAI env values when AI features are used
+- Firestore credentials only when using Firestore-backed storage
 
-## Security-Critical Runtime Config
+Do not read or commit `.env` files.
+
+## Important Config
+- `BUILDERBOT_DISTRIBUTION_MODE`
+  - `local` or `hosted`
+- `PERSISTENCE_MODE`
+  - `sqlite`, `firestore`, or `memory`
 - `BOT_WS_ALLOWED_ORIGINS`
-  - Comma-separated Web UI origin allowlist for bot control WS connections.
-  - Set explicit values in non-local environments (for example: `https://app.example.com`).
-- `PRE_SCALE_PERSISTENCE_MODE`
-  - Set to `firestore` in staging/prod to require persistent economics/idempotency storage.
-  - If set to `firestore` but persistence cannot initialize, `/api/admin/ops-alerts` emits `persistence_fallback_active`.
+  - allowed Web UI origins for bot WebSocket control
 - `MC_AUTH_MODE`
-  - Bot auth mode for Minecraft connection (`offline`, `mojang`, `microsoft`).
-  - Defaults to `offline` to keep local/dev auth surface minimal.
+  - Minecraft auth mode: `offline`, `mojang`, or `microsoft`
+- `PRE_SCALE_PERSISTENCE_MODE`
+  - older economics persistence switch
+  - `firestore` makes fallback alerts show if Firestore is not available
 
 ## Install
 ```bash
@@ -25,115 +66,104 @@ npm --prefix apps/api install
 npm --prefix apps/webui install
 ```
 
-## Local Run
-1. Start Minecraft server:
+## Run Locally Today
+In VS Code, press `Ctrl+Shift+B` to run the default `local stack` build task.
+
+That starts these services in separate terminals when they are not already running:
+
+- Minecraft server
+- API
+- Web UI
+- Minecraft bot
+
+The task checks local ports first, so it will not start another copy on top of a running service.
+
+Start a Minecraft server:
+
 ```bash
 java -Xmx2G -jar paper-1.20.4-499.jar
 ```
-2. Start API (`http://localhost:3001`):
+
+Start the API:
+
 ```bash
 npm --prefix apps/api run dev
 ```
-3. Get an Auth0 access token for local bot API calls:
+
+Start the Web UI:
+
 ```bash
 npm --prefix apps/webui run dev
 ```
-- Open `http://localhost:5173` and log in.
-- In browser DevTools -> Network, open a request like `/api/user/tier`.
-- Copy the `Authorization` header token (`Bearer <token>`).
-- Export it in your shell:
+
+Local mode uses a default local user for API identity.
+The Web UI also defaults to local mode and skips Auth0.
+
+To test hosted Auth0 login from the Web UI, set:
+
+```bash
+VITE_BUILDERBOT_DISTRIBUTION_MODE=hosted
+```
+
+Hosted-style runs still use Auth0. For hosted-style local testing, get a token from the Web UI:
+
+1. Open `http://localhost:5173`.
+2. Log in.
+3. In browser DevTools, open a request like `/api/user/tier`.
+4. Copy the `Authorization` header.
+5. Export it:
+
 ```bash
 export AUTH_TOKEN='<paste token here>'
 ```
-- Token must be minted for audience `https://api.mcbuilderbot.com`.
 
-4. Choose one bot launch mode:
+Start the bot from the terminal:
 
-Mode A: Start bot from terminal
 ```bash
 npm run dev:bot
 ```
 
-Mode B: Start bot from the Web UI Launch button (Electron only)
+Or start Electron:
+
 ```bash
-npm --prefix apps/webui run dev
 npm run dev:electron
 ```
-- Open the Electron app window and click **Launch BuilderBot**.
-- The Launch/Stop buttons use Electron IPC and do not work in plain browser mode.
 
-5. Optional CLI build prompt flow:
+That command starts the Web UI first if it is not already running.
+
+## CLI Prompt
+You can run a simple prompt from the CLI:
+
 ```bash
 npm run dev -- "build a cobblestone tower" --schematic
 ```
 
-Optional:
-- Start Web UI (`http://localhost:5173`):
-```bash
-npm --prefix apps/webui run dev
-```
-- Start Electron app (expects Web UI on port 5173):
-```bash
-npm run dev:electron
-```
-- Start static marketing site from `apps/website` (public landing surface):
-```bash
-python3 -m http.server 8080 --directory apps/website
-```
-
 ## Tests
+Run all tests:
+
 ```bash
 npm test
 ```
 
+Useful checks:
+
+```bash
+npm run check:architecture
+npm run check:routes-security
+npm run check:secrets
+```
+
 ## Architecture
-- Canonical shared domain lives in `apps/core`:
-  - contracts: `apps/core/contracts/*`
-  - db adapters: `apps/core/db/firestore/*`
-  - shared logic: `apps/core/logic/*`
-  - shared platform helpers: `apps/core/platform/*`
-- API route wiring/composition:
-  - bootstrap: `apps/api/index.js`
-  - composition root: `apps/api/app-context.js`
-  - HTTP adapters: `apps/api/routes/*`
-- Stage shared dependencies before run/deploy:
+Shared code lives in `apps/core`.
+
+Before tests or deploys, shared code is copied into app folders:
+
 ```bash
 npm run stage:shared-core
 ```
-- Boundary/architecture guardrails:
-```bash
-npm run check:architecture
-```
-- Full conventions: `docs/CORE-ARCHITECTURE.md`.
 
-## Ops Hardening
-- Emergency guard now emits transition logs on state changes:
-  - `GUARD_STATE_TRANSITION: NORMAL -> ACTIVE ...`
-- Free-tier emergency throttles return stable API semantics:
-  - `429` with `Retry-After` header
-  - response `code: "FREE_TIER_THROTTLED_GUARD_ACTIVE"`
-- Pre-scale telemetry now includes `guard_state_effective` for current guard status.
-- Run deterministic normal/active/recovery shakeout:
-```bash
-npm --prefix apps/api run pre-scale:shakeout
-```
+Read more:
 
-## New API Surfaces (Monolithic Cloud Run)
-- `POST /api/ai-get-structure` now returns:
-  - `instructionPlan` (normalized actions schema)
-  - `blocksAndTags` (legacy compatibility)
-  - optional `schematic` artifact when `includeSchematic: true`
-- `GET /api/admin/ops-dashboard`, `GET /api/admin/ops-alerts`
-- `GET /api/admin/pre-scale-telemetry`, `GET /api/admin/performance-profile`
-- `GET /api/admin/build-costs`
-- `POST /api/admin/pre-scale/simulate`, `GET /api/admin/pre-scale/simulations`
-- `GET /api/admin/conversion-funnel`
-- `POST /api/admin/pre-scale/migrate-inmemory`
-- `GET /api/admin/incidents`, `POST /api/admin/incidents/:incidentId/resolve`
-- `POST /api/admin/evaluation/run`, `GET /api/admin/evaluation`
-- `GET /api/admin/abuse-analytics`, `GET /api/admin/overage-report`
-- `GET /api/admin/security-audits`
-- `GET /api/admin/analytics/referrals`, `GET /api/admin/analytics/attribution`
-- `GET /api/user/builds`, `GET /api/user/build/:buildId`
-- `GET /api/config/skus` for active checkout SKU catalog (Starter/Pro/Admin monthly)
-- community/policy endpoints for account linking, reactions/rewards, referrals/entitlements, phrase packs, marketplace, attribution, cancellation/refund tickets, renewal preferences, and parental controls.
+- `docs/CORE-ARCHITECTURE.md`
+- `docs/HOSTED-BILLING-AND-LOCAL-DB-PLAN.md`
+- `STATUS.md`

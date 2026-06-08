@@ -197,7 +197,7 @@ Exit criteria:
 ## Phase 4: Policy/Tier/AI Transparency
 Deliverables:
 1. Integrate `/user/features`, `/user/entitlements`, `/user/overage` into a usage card.
-2. Add in-context tier messaging with accurate limits (aligned to `docs/MARKETING-PLAN-COMPARISON.md`).
+2. Add in-context tier messaging with accurate limits from the canonical tier policy.
 3. Display build governance feedback (quota reached, rate-limited, fallback mode) in clear UX copy.
 4. Add admin-only telemetry hooks later if/when admin view is in scope.
 

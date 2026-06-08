@@ -1,9 +1,9 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { BrowserRouter as Router, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth0 } from '@auth0/auth0-react';
 
 import WebSocketProvider, { WebSocketContext } from './components/WebSocketProvider';
 import { fetchAuthorizedJson, fetchJson } from './components/apiFetch';
+import { useBuilderBotAuth } from './components/builderBotAuth.jsx';
 
 const isElectronRuntime = () => Boolean(window.electronAPI?.launchBot);
 
@@ -682,7 +682,7 @@ function AdminScreen({ getAccessTokenSilently }) {
 }
 
 function PlanChoice({ onSelect }) {
-  const { getAccessTokenSilently } = useAuth0();
+  const { getAccessTokenSilently } = useBuilderBotAuth();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState('');
   const plans = [
@@ -752,7 +752,7 @@ function PlanChoice({ onSelect }) {
 function CheckoutSuccessScreen() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { getAccessTokenSilently } = useAuth0();
+  const { getAccessTokenSilently } = useBuilderBotAuth();
 
   useEffect(() => {
     const sessionId = params.get('session_id');
@@ -869,11 +869,15 @@ function AppWorkspace({ user, logout, tier, setTier, getAccessTokenSilently }) {
 }
 
 function AuthenticatedApp() {
-  const { loginWithRedirect, logout, isAuthenticated, isLoading, user, getAccessTokenSilently } = useAuth0();
+  const { loginWithRedirect, logout, isAuthenticated, isLoading, user, getAccessTokenSilently, isLocal } = useBuilderBotAuth();
   const [tier, setTier] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    if (isLocal) {
+      setTier('admin');
+      return;
+    }
     const syncUserAndTier = async () => {
       try {
         const token = await getAccessTokenSilently();

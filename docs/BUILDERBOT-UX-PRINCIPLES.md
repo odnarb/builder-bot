@@ -1,65 +1,77 @@
 # BuilderBot UX Principles
-Date: 2026-02-21
+Date: 2026-06-07
 
-## Purpose
-Define a product-specific UX baseline for the BuilderBot dashboard so design and implementation stay aligned across guided and advanced user modes.
+This doc explains how the app should feel to use.
 
-## Product Principles
-1. State should be obvious in under 3 seconds.
-2. Every panel has one primary action and clear secondary actions.
-3. Raw data is never the default view when a human-readable summary is possible.
-4. Guided mode optimizes safety and clarity for younger/new users.
-5. Advanced mode optimizes speed and control for experienced users.
-6. Tier limits and policy outcomes are explained before failures, not only after.
-7. Accessibility settings are first-class and persistent per user.
+## Main Goal
+Users should know what to do in a few seconds.
 
-## Language Rules
-- Use direct, plain labels (`Launch BuilderBot`, `Retry Last Build`, `Strict Mode`).
-- Avoid emoji-only actions and ambiguous short labels.
-- Always pair iconography with text labels.
-- Prefer actionable error copy (`Connection is not ready. Reconnect and try again.`).
+The app should make building feel clear, safe, and fast.
 
-## Interaction Rules
-- Mobile-first layouts must remain usable at 360px width.
-- Touch targets are at least 40px tall.
-- Guided mode defaults to preset chips and explicit confirmations for risky commands.
-- Advanced mode surfaces keyboard-first behaviors and diagnostic detail.
-- Panels use progressive disclosure: summary first, details second.
+## Basic Rules
+- Show the bot status clearly.
+- Make the main action easy to find.
+- Use plain button names.
+- Do not show raw JSON unless the user asks for details.
+- Explain limits before users hit them.
+- Keep controls keyboard accessible.
+- Make errors helpful.
 
-## Information Architecture Rules
-- Top rail always includes connection, bot state, tier context, and current build status.
-- Primary workspace includes command composer, build timeline, controls, and live activity feed.
-- Utility column includes usage/tier visibility and build history deep-dive.
-- Settings drawer includes mode, safety controls, subscription renewal, and accessibility preferences.
+Good error:
 
-## Accessibility Bar
-- Keyboard reachable controls and visible focus states.
-- Reduced motion mode disables transitions/animations.
-- High contrast mode increases visual contrast globally.
-- Text scale is user-selectable and persisted.
+```txt
+Connection is not ready. Reconnect and try again.
+```
 
-## Source-To-Decision Matrix
-| Source Theme | BuilderBot Decision |
-| --- | --- |
-| Progressive disclosure (NN/g) | Build history and activity feed default to summary cards with optional detail expansion. |
-| Hierarchy and proximity (Cygnis) | Panels are clustered into status rail, workspace, and utility column with distinct headings. |
-| Consistent component language (React library references) | MUI-first primitives and shared `ui/*` wrappers standardize cards, alerts, badges, and actions. |
-| Icon clarity over novelty (icon library references) | `react-icons` replaces emoji-led controls and always pairs icon + text. |
-| Accessibility-first modern UX | Added persistent text scale, reduced motion, and contrast mode in settings drawer. |
+Bad error:
 
-## Mode Contract
-### Guided
-- Default mode for new users.
-- Preset command chips and low-friction command input.
-- Confirmation for risky command vocabulary.
-- Reduced diagnostics by default.
+```txt
+Error 500
+```
 
-### Advanced
-- Full command control with fast iteration.
-- Expanded event payloads in activity feed.
-- Better suited for repeated builds and diagnostics.
+## Screen Layout
+The app should show:
 
-## Non-Negotiables
-- No bypass of auth middleware or tier enforcement.
-- No client-side assumption of paid entitlements.
-- No removal of clear policy feedback for quotas, limits, or safety controls.
+- connection state,
+- bot state,
+- current user tier,
+- current build status,
+- prompt input,
+- build history,
+- recent activity.
+
+## Guided Mode
+Guided mode is for new users.
+
+It should:
+
+- show simple choices,
+- ask before risky actions,
+- hide noisy debug details,
+- use clear labels.
+
+## Advanced Mode
+Advanced mode is for power users.
+
+It can show:
+
+- more logs,
+- faster controls,
+- more detail,
+- keyboard-friendly flows.
+
+## Accessibility
+The app should support:
+
+- keyboard navigation,
+- visible focus states,
+- reduced motion,
+- high contrast,
+- text scaling.
+
+## Must Not Break
+- Do not bypass auth checks.
+- Do not trust the frontend for paid access.
+- Do not hide quota or safety limits.
+- Do not rely only on color to show meaning.
+

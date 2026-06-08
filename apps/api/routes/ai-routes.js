@@ -12,6 +12,7 @@ export function registerAiRoutes(app, deps) {
         getUserById,
         resolveTier,
         resolveAiUsageKey,
+        requireActiveSubscription = (_req, _res, next) => next(),
         createAiGetStructureHandler,
     } = deps;
 
@@ -22,7 +23,7 @@ export function registerAiRoutes(app, deps) {
         keyPrefix: 'ai-get-structure',
     });
 
-    app.post('/ai-get-structure', jwtCheck, aiRateLimiter, asyncHandler(async (req, res) => {
+    app.post('/ai-get-structure', jwtCheck, requireActiveSubscription, aiRateLimiter, asyncHandler(async (req, res) => {
         const {
             message,
             context = {},

@@ -140,6 +140,9 @@ vite.config.ts.timestamp-*
 
 k.json
 
+# Local Minecraft server runtime
+.local-minecraft-server/
+
 # Ignore core in internal folders
 apps/api/core
 apps/api/shared-utils

@@ -1,5 +1,5 @@
 import React, { createContext, useEffect, useRef, useState } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useBuilderBotAuth } from './builderBotAuth.jsx';
 
 const RETRY_LIMIT = 100;
 
@@ -10,7 +10,7 @@ export const WebSocketContext = createContext({
 });
 
 export default function WebSocketProvider({ children }) {
-  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
+  const { getAccessTokenSilently, isAuthenticated } = useBuilderBotAuth();
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
   const reconnectAttempts = useRef(0);

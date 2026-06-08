@@ -1,58 +1,98 @@
-# Core Architecture Conventions
-Date: 2026-02-21
+# Core Architecture
+Date: 2026-06-07
 
-## Goals
-- Keep deployable apps (`apps/api`, `apps/functions/*`) HTTP/runtime focused.
-- Keep shared business + persistence logic in canonical `apps/core`.
-- Enforce deploy-root safety (no hidden imports outside staged app source).
+This doc explains where code should go.
 
-## Canonical Source Layout
-- `apps/core/contracts/*`
-  - Shared policy/config contracts (tiers, SKUs, constants).
-- `apps/core/db/firestore/*`
-  - Firestore persistence adapters only.
-- `apps/core/logic/*`
-  - Shared business logic and stateful in-memory domain modules.
-- `apps/core/platform/*`
-  - Shared platform abstractions (logger/provider helpers).
+## Main Rule
+Keep shared business code in `apps/core`.
 
-## App Layout Expectations
-- `apps/api/index.js`
-  - Express bootstrap, middleware wiring, route mounts, 404/error handlers only.
-- `apps/api/app-context.js`
-  - Composition root that assembles dependencies for route modules.
-- `apps/api/routes/*`
-  - HTTP adapters only (request/response mapping).
-- `apps/api/utils/*`
-  - Compatibility adapters only during migration (`export * from ../core/...`).
+Apps like `apps/api` should mostly wire things together. They should not own shared rules.
 
-## Staging Model
-Deployable apps use staged local mirrors before run/deploy:
-- `apps/core -> apps/api/core`
-- `apps/core -> apps/functions/stripe-api/core`
-- `apps/shared-utils -> apps/api/shared-utils`
-- `packages/prompt-parser -> apps/api/packages/prompt-parser`
+## Important Folders
+- `apps/core/contracts`
+  - Shared rules and config.
+  - Example: tiers, SKUs, limits.
+- `apps/core/logic`
+  - Shared business logic.
+  - Example: usage rules, validation, billing rules.
+- `apps/core/db/firestore`
+  - Firestore database code.
+  - Used for hosted/cloud storage.
+- `apps/core/db/sqlite`
+  - SQLite database code.
+  - Used for local open-source storage.
+- `apps/core/platform`
+  - Shared platform helpers.
+  - Example: logger and runtime mode config.
+- `apps/api/routes`
+  - HTTP route code only.
+  - Routes should call shared logic instead of owning business rules.
 
-Command:
+## Runtime Modes
+BuilderBot is moving to two modes:
+
+| Mode | DB | Payment |
+|---|---|---|
+| `local` | SQLite | Off |
+| `hosted` | Firestore or hosted DB | Stripe |
+
+Mode config lives in:
+
+```txt
+apps/core/platform/runtime-mode.js
+```
+
+## Staged Core Copies
+Some apps use copied core files before tests or deploys.
+
+The copy step is:
+
 ```bash
 npm run stage:shared-core
 ```
 
-`npm test` and `npm run test:api-smoke` run staging first.
+This copies:
 
-## Boundary Rules
-Validated by `scripts/check-architecture-boundaries.mjs`:
-- Only approved DB adapters may import `@google-cloud/firestore` directly.
-- Deployable apps cannot import files outside their own source roots.
+- `apps/core` to `apps/api/core`
+- `apps/core` to `apps/functions/stripe-api/core`
+- `apps/shared-utils` to `apps/api/shared-utils`
+- `packages/prompt-parser` to `apps/api/packages/prompt-parser`
 
-## Migration Rule
-When moving logic from `apps/api/utils/*` to `apps/core/*`:
-1. Move implementation into `apps/core` (canonical).
-2. Replace API util file with thin re-export adapter.
-3. Keep route/controller behavior unchanged.
-4. Re-run:
+Do not edit the copied files directly.
+
+Edit the real source first:
+
+```txt
+apps/core
+packages/prompt-parser
+apps/shared-utils
+```
+
+Then run:
+
+```bash
+npm run stage:shared-core
+```
+
+## Database Rules
+- Firestore code belongs in `apps/core/db/firestore`.
+- SQLite code belongs in `apps/core/db/sqlite`.
+- Route files should not talk directly to Firestore or SQLite.
+- Business logic should use small repository functions when it needs storage.
+- Do not move all database code at once. Move one clear path at a time.
+
+## API Rules
+- `apps/api/index.js` should wire middleware and routes.
+- `apps/api/app-context.js` should build dependencies.
+- `apps/api/routes/*` should map HTTP requests to logic calls.
+- `apps/api/utils/*` should only be short compatibility wrappers when needed.
+
+## Checks
+Run these before a PR:
+
 ```bash
 npm run check:architecture
 npm run test:api-smoke
 npm test
 ```
+

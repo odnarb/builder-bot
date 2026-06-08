@@ -5,6 +5,7 @@ import path from 'node:path';
 
 const apiModuleUrl = pathToFileURL(path.resolve('apps/api/index.js')).href;
 const REQUIRED_ENV = {
+  BUILDERBOT_DISTRIBUTION_MODE: 'hosted',
   AUTH0_DOMAIN: 'example.auth0.com',
   AUTH0_AUDIENCE: 'https://api.example.com',
   OPENAI_API_KEY: 'test-key',

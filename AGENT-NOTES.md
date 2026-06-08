@@ -1,5 +1,11 @@
 # Agent Notes
 
+## 2026-06-07 Branching Note
+
+- Repo instructions say to create new code branches from `dev`, but no local or remote `dev` branch exists.
+- Available branches checked: local `main`, current `free-for-all`, remote `origin/main`.
+- Proceeding from updated `main` for `features/hosted-billing-local-db-switch`.
+
 ## 2026-06-01 UX Self-Critique
 
 What simplified:
@@ -37,4 +43,3 @@ What still feels unpolished:
 - The UI follows the Figma direction, but exact visual fidelity needs human design review.
 - Marketplace and phrase-pack creation are functional but sparse.
 - Packaged Electron behavior needs validation on a built desktop artifact, not only Vite.
-
