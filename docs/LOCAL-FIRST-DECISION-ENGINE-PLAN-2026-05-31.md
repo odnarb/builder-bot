@@ -1,61 +1,75 @@
 # Local-First Decision Engine Plan
-Date: 2026-05-31
+Date: 2026-06-07
 
 ## Goal
-Use Mineflayer as the primary decision source and use AI only when local code cannot confidently turn a prompt or failure into an executable plan.
+BuilderBot should use local code first.
 
-The AI should mostly design. The local engine should choose the site, prepare terrain, execute blocks, verify results, and recover from common failures.
+Use AI only when local code cannot make a good build plan.
 
-## Current Base
-The codebase already has the useful primitives:
-- `apps/bot/world-context.js` scans terrain, ranks anchors, probes pathfinder reachability, and records failure/path diagnostics.
-- `apps/bot/decision-engine.js` runs a bounded build state machine.
-- `apps/bot/execute-commands.js` can execute prep, movement, clearing, flattening, support fill, and placement.
-- `packages/prompt-parser/index.js` handles simple deterministic structure prompts.
+In simple words:
 
-## Simple Architecture
-1. Parse locally first.
-   - Use known templates for simple structures: floors, platforms, bridges, walls, pillars, towers, stairs, cubes/boxes, and small/medium houses.
-   - Parse simple dimensions and materials locally, such as `10x4 stone floor` or `8 by 2 wooden bridge`.
-   - Return `null` when confidence is low.
-2. Compile locally.
-   - Pick the best Mineflayer anchor from `buildDecisionWorldContext`.
-   - Convert relative template blocks into the existing command format.
-   - Add a small prep phase: `prepare_site`, `ensure_access`, `flatten_area`, `clear_volume`.
-3. Execute locally.
-   - Let `executeCommands` handle support, obstruction, inventory, and path failures.
-4. Recover locally where execution already knows how.
-   - Let `executeCommands` handle support, obstruction, inventory, and path retries.
-   - Keep failure digests for the bounded patch-replan loop.
-5. Ask AI last.
-   - Initial AI call happens only when local planning returns `null`.
-   - Patch AI calls still use the existing bounded replan loop when executor recovery is not enough.
+- local code should pick the build spot,
+- local code should prepare the area,
+- local code should place blocks,
+- local code should check the result,
+- AI should help with harder or more creative prompts.
 
-## Non-Goals
-- No complex symbolic planner.
-- No long-running local search.
-- No custom pathfinding engine.
-- No raw world dump sent to AI.
+## What Already Exists
+- `apps/bot/world-context.js`
+  - checks nearby terrain and possible build spots.
+- `apps/bot/decision-engine.js`
+  - runs the build steps.
+- `apps/bot/execute-commands.js`
+  - moves the bot and places blocks.
+- `packages/prompt-parser/index.js`
+  - understands simple prompts.
 
-## Context Contract
-Continue sending compact, derived facts:
-- bot position and survival state,
-- inventory summary,
-- terrain profile,
-- top anchor candidates,
-- reachability summary,
-- nearby block/entity summaries,
-- pathfinder diagnostics,
-- failure digest,
-- tier-derived decision policy.
+## Simple Flow
+1. Try local parsing first.
+   - Example: `10x4 stone floor`.
+   - Example: `8 by 2 wooden bridge`.
+2. If local parsing works, make a local build plan.
+3. Pick a safe build spot.
+4. Clear or flatten the area if needed.
+5. Build the blocks.
+6. Check for common failures.
+7. Ask AI only if local code is not enough.
 
-## First Implementation Slice
-- Add `apps/bot/local-decision-planner.js`.
-- Wire `build` command to try local initial plan before AI.
-- Add tests for local plan compilation.
+## What Local Code Should Handle
+- floors,
+- platforms,
+- bridges,
+- paths,
+- walls,
+- pillars,
+- towers,
+- stairs,
+- simple houses,
+- simple farms,
+- gardens,
+- doors and windows,
+- tunnels and arches.
+
+## What AI Should Handle
+AI should handle prompts that are too open-ended for simple local rules.
+
+Examples:
+
+- styled castles,
+- complex gardens,
+- decorative builds,
+- prompts with unclear sizes or shapes.
+
+## What We Are Not Building Here
+- no giant planning engine,
+- no custom pathfinding engine,
+- no huge world dump sent to AI,
+- no slow search over many possible builds.
 
 ## Guardrails
+- If local code is unsure, return `null` and ask AI.
 - Keep tier limits in `decision-tier-policy.js`.
-- Keep AI route auth and tier derivation unchanged.
-- Keep executor edit caps authoritative.
-- Keep local planner conservative: if unsure, return `null`.
+- Keep API tier checks server-side.
+- Keep final block limits enforced by the executor.
+- Add tests when adding new local templates.
+

@@ -33,13 +33,32 @@ function normalizeOrigin(origin) {
   }
 }
 
-export function parseAllowedWsOrigins(rawAllowedOrigins) {
-  const source = typeof rawAllowedOrigins === 'string' && rawAllowedOrigins.trim().length > 0
-    ? rawAllowedOrigins
-    : DEFAULT_ALLOWED_WS_ORIGINS.join(',');
+/**
+ * Return whether the bot is running in local distribution mode.
+ * @param {Record<string, string | undefined>} env Runtime environment.
+ * @returns {boolean} True when local mode is active.
+ */
+function isLocalDistributionMode(env = process.env) {
+  return String(env.BUILDERBOT_DISTRIBUTION_MODE || 'local').trim().toLowerCase() === 'local';
+}
+
+/**
+ * Parse the WebSocket origin allowlist.
+ * Local mode keeps safe localhost defaults even when extra origins are configured.
+ * @param {string} rawAllowedOrigins Comma-separated origins.
+ * @param {{ includeLocalDefaults?: boolean }} [options] Parser options.
+ * @returns {Set<string>} Normalized allowed origins.
+ */
+export function parseAllowedWsOrigins(rawAllowedOrigins, { includeLocalDefaults = isLocalDistributionMode() } = {}) {
+  const configuredOrigins = typeof rawAllowedOrigins === 'string' && rawAllowedOrigins.trim().length > 0
+    ? rawAllowedOrigins.split(',')
+    : [];
+  const source = [
+    ...(includeLocalDefaults ? DEFAULT_ALLOWED_WS_ORIGINS : []),
+    ...configuredOrigins,
+  ];
 
   const parsed = source
-    .split(',')
     .map((entry) => normalizeOrigin(entry))
     .filter(Boolean);
 

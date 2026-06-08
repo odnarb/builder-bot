@@ -24,6 +24,45 @@ function createWindow() {
         },
     });
 
+    win.webContents.on('did-fail-load', () => {
+        win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(`
+            <!doctype html>
+            <html>
+                <head>
+                    <title>BuilderBot</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            min-height: 100vh;
+                            display: grid;
+                            place-items: center;
+                            background: #101418;
+                            color: #f4f7f9;
+                            font-family: Arial, sans-serif;
+                        }
+                        main {
+                            max-width: 520px;
+                            padding: 32px;
+                            line-height: 1.5;
+                        }
+                        code {
+                            background: #202832;
+                            padding: 2px 6px;
+                            border-radius: 4px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <main>
+                        <h1>BuilderBot Web UI is not running</h1>
+                        <p>Start the Web UI, then restart Electron.</p>
+                        <p><code>npm --prefix apps/webui run dev</code></p>
+                    </main>
+                </body>
+            </html>
+        `)}`);
+    });
+
     win.loadURL('http://localhost:5173'); // or loadFile for production
 }
 

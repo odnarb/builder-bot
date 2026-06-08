@@ -68,8 +68,29 @@ test('isAllowedWsOrigin allows configured local UI origins', () => {
   assert.equal(allowed, true);
 });
 
+test('parseAllowedWsOrigins keeps localhost defaults in local mode', () => {
+  const allowlist = parseAllowedWsOrigins('https://hosted.example.com', {
+    includeLocalDefaults: true,
+  });
+
+  assert.equal(allowlist.has('http://localhost:5173'), true);
+  assert.equal(allowlist.has('http://127.0.0.1:5173'), true);
+  assert.equal(allowlist.has('https://hosted.example.com'), true);
+});
+
+test('parseAllowedWsOrigins can stay strict for hosted mode', () => {
+  const allowlist = parseAllowedWsOrigins('https://hosted.example.com', {
+    includeLocalDefaults: false,
+  });
+
+  assert.equal(allowlist.has('http://localhost:5173'), false);
+  assert.equal(allowlist.has('https://hosted.example.com'), true);
+});
+
 test('isAllowedWsOrigin rejects missing or unapproved origin headers', () => {
-  const allowlist = parseAllowedWsOrigins('http://localhost:5173');
+  const allowlist = parseAllowedWsOrigins('http://localhost:5173', {
+    includeLocalDefaults: false,
+  });
 
   const missingOrigin = isAllowedWsOrigin({
     request: { headers: {} },

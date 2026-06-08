@@ -1,47 +1,45 @@
-# DEEP_WORK.md
+# Deep Work Guide
 
-## Mission
-Build/fix/refactor this app. Simplify code as you go. Do not over-engineer
+Use this when making a larger change.
 
-## Non-Negotiables
-- Do not change unrelated files.
-- Do not redesign architecture unless required.
-- Preserve existing behavior unless explicitly listed.
-- Prefer small, reviewable commits/diffs.
+## Goal
+Make the smallest complete fix.
 
-## Source of Truth
-- Read AGENTS.md first.
-- Read ROADMAP.md.
-- Read relevant docs before editing code.
+Do not over-engineer.
 
-## Milestones
-### Milestone 1 — Understand
-- Inspect code paths.
-- Identify affected files.
-- Write a brief implementation plan.
+## Before Coding
+1. Read `AGENTS.md`.
+2. Read `README.md`.
+3. Read `STATUS.md`.
+4. Read the docs related to your task.
+5. Check the files you will change.
 
-### Milestone 2 — Implement
-- Make the smallest complete change.
-- Keep changes scoped.
+## While Coding
+- Keep changes small.
+- Do not edit unrelated files.
+- Do not change behavior unless the task needs it.
+- Prefer simple code.
+- Add tests for risky changes.
+- Update docs when behavior changes.
 
-### Milestone 3 — Validate
-Run:
-- npm test
-- npm run lint
-- npm run build
+## Checks
+Run the checks that match your change.
 
-Fix failures before moving on.
+Common checks:
 
-### Milestone 4 — Document
-Update:
-- CHANGELOG.md
-- ROADMAP.md
-- any affected docs
+```bash
+npm test
+npm run check:architecture
+npm run check:routes-security
+npm run check:secrets
+```
 
-## Completion Criteria
-Done only when:
-- Feature works
-- Tests pass
-- Build passes
-- No unrelated diffs
-- Summary explains what changed, why, and what remains
+## Done Means
+The work is done when:
+
+- the feature or fix works,
+- the right tests pass,
+- docs are updated,
+- no unrelated files changed,
+- the final summary says what changed and what still needs work.
+

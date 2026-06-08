@@ -121,6 +121,43 @@ test('POST /ai-get-structure ignores caller tier and uses persisted user tier', 
   assert.equal(capturedParams.authUserId, 'auth|alice');
 });
 
+test('POST /ai-get-structure applies active subscription gate before AI handler', async () => {
+  const app = createMockApp();
+  let aiHandlerCalled = false;
+  const deps = {
+    jwtCheck: (req, res, next) => {
+      req.auth = { payload: { sub: 'auth|free-hosted-user' } };
+      return next();
+    },
+    requireActiveSubscription: (_req, res) => res.status(402).json({
+      code: 'SUBSCRIPTION_REQUIRED',
+      message: 'Choose a plan to continue.',
+    }),
+    asyncHandler: createAsyncHandler(),
+    getUserById: async ({ userId }) => ({ id: userId, tier: 'free' }),
+    resolveTier: (tier) => String(tier || 'free').toLowerCase(),
+    resolveAiUsageKey: () => 'auth:ignored',
+    createAiGetStructureHandler: () => async () => {
+      aiHandlerCalled = true;
+      return { status: 200, body: { ok: true } };
+    },
+  };
+  registerAiRoutes(app, deps);
+  const handlers = app.routes.get('POST /ai-get-structure');
+  const req = {
+    body: { message: 'build a hosted tower' },
+    headers: { authorization: 'Bearer test' },
+    ip: '127.0.0.1',
+  };
+  const res = createMockResponse();
+
+  await runRouteHandlers(handlers, req, res);
+
+  assert.equal(res.statusCode, 402);
+  assert.equal(res.body.code, 'SUBSCRIPTION_REQUIRED');
+  assert.equal(aiHandlerCalled, false);
+});
+
 test('POST /ai-get-structure keeps persisted tier on patch-replan requests', async () => {
   const app = createMockApp();
   let capturedParams = null;

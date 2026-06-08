@@ -1,8 +1,10 @@
 import Stripe from 'stripe';
 import { OpenAI } from 'openai';
 
-import jwtCheck from '../middleware/auth0-jwt-check.js';
 import { createRequireAdminAccess } from '../middleware/require-admin-access.js';
+import { createRequireActiveSubscription } from '../middleware/require-active-subscription.js';
+import { createRuntimeJwtCheck } from '../middleware/runtime-jwt-check.js';
+import { createLocalModeRouteDeps } from './local-mode-route-deps.js';
 
 import {
     createAiRuntimeHelpers,
@@ -15,6 +17,7 @@ import {
     normalizeInstructionPlan,
     optimizeInstructionPlan,
 } from '../shared-utils/instruction-schema.js';
+import { getRuntimeModeConfig } from '../core/platform/runtime-mode.js';
 
 /**
  * Resolve a stable per-user usage key for monthly token budgeting.
@@ -38,6 +41,19 @@ function resolveAiUsageKey(req, tier) {
  * @param {{ staticRouteDeps: Record<string, any> }} params
  */
 export function createRuntimeRouteDeps({ staticRouteDeps }) {
+    const runtimeModeConfig = getRuntimeModeConfig();
+    const jwtCheck = createRuntimeJwtCheck({ runtimeModeConfig });
+    const localModeRouteDeps = createLocalModeRouteDeps({
+        runtimeModeConfig,
+        logger: staticRouteDeps.logger,
+    });
+    const userDeps = {
+        getUserById: localModeRouteDeps.getUserById || staticRouteDeps.getUserById,
+        getUserByEmail: localModeRouteDeps.getUserByEmail || staticRouteDeps.getUserByEmail,
+        createUser: localModeRouteDeps.createUser || staticRouteDeps.createUser,
+        updateUserTier: localModeRouteDeps.updateUserTier || staticRouteDeps.updateUserTier,
+    };
+
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
         apiVersion: '2024-04-10',
     });
@@ -79,8 +95,16 @@ export function createRuntimeRouteDeps({ staticRouteDeps }) {
         invalidateAdminFallbackTierCache,
     } = createRequireAdminAccess({
         asyncHandler,
-        getUserById: staticRouteDeps.getUserById,
+        getUserById: userDeps.getUserById,
         resolveTier: staticRouteDeps.resolveTier,
+    });
+
+    const requireActiveSubscription = createRequireActiveSubscription({
+        asyncHandler,
+        getUserById: userDeps.getUserById,
+        resolveTier: staticRouteDeps.resolveTier,
+        runtimeModeConfig,
+        logger: staticRouteDeps.logger,
     });
 
     return {
@@ -102,6 +126,10 @@ export function createRuntimeRouteDeps({ staticRouteDeps }) {
             detectModerationViolation,
             invalidateAdminFallbackTierCache,
             requireAdminAccess,
+            requireActiveSubscription,
+            runtimeModeConfig,
+            ...localModeRouteDeps,
+            ...userDeps,
             FREE_TIER_THROTTLE_ERROR_CODE,
             INFRA_COST_PER_REQUEST_USD,
         },
