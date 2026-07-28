@@ -11,7 +11,77 @@ const ERROR_CODES = Object.freeze({
   INVENTORY_MISSING: 'ERR_INVENTORY_MISSING',
   UNREACHABLE: 'ERR_UNREACHABLE',
   PREP_LIMIT: 'ERR_PREP_LIMIT',
+  MUTATION_LIMIT: 'ERR_MUTATION_LIMIT',
+  VERIFY_MISMATCH: 'ERR_VERIFY_MISMATCH',
 });
+
+/**
+ * Create one mutation ledger that can be reused across initial and patch attempts.
+ * @param {{
+ *   maxPrepEdits?: number,
+ *   maxBlocksPerBuild?: number,
+ * }} [decisionPolicy]
+ * @returns {{
+ *   limits: { prepEdits: number, placementWrites: number },
+ *   used: {
+ *     prepEdits: number,
+ *     placementWrites: number,
+ *     overwriteDigs: number,
+ *     supportWrites: number,
+ *   },
+ * }}
+ */
+export function createExecutionLedger(decisionPolicy = {}) {
+  const rawPrepLimit = Number(decisionPolicy?.maxPrepEdits);
+  const rawPlacementLimit = Number(decisionPolicy?.maxBlocksPerBuild);
+
+  return {
+    limits: {
+      prepEdits: Number.isFinite(rawPrepLimit)
+        ? Math.max(0, Math.trunc(rawPrepLimit))
+        : 256,
+      placementWrites: Number.isFinite(rawPlacementLimit)
+        ? Math.max(1, Math.trunc(rawPlacementLimit))
+        : Number.MAX_SAFE_INTEGER,
+    },
+    used: {
+      prepEdits: 0,
+      placementWrites: 0,
+      overwriteDigs: 0,
+      supportWrites: 0,
+    },
+  };
+}
+
+/**
+ * Conservatively reserve mutation budget before a world-edit attempt.
+ * Failed calls keep their reservation because the remote world result may be uncertain.
+ * @param {ReturnType<typeof createExecutionLedger>} ledger
+ * @param {{
+ *   prepEdits?: number,
+ *   placementWrites?: number,
+ *   overwriteDigs?: number,
+ *   supportWrites?: number,
+ * }} mutation
+ * @returns {boolean}
+ */
+function reserveMutation(ledger, mutation = {}) {
+  const prepEdits = Math.max(0, Math.trunc(Number(mutation.prepEdits) || 0));
+  const placementWrites = Math.max(0, Math.trunc(Number(mutation.placementWrites) || 0));
+
+  if (
+    ledger.used.prepEdits + prepEdits > ledger.limits.prepEdits ||
+    ledger.used.placementWrites + placementWrites > ledger.limits.placementWrites
+  ) {
+    return false;
+  }
+
+  ledger.used.prepEdits += prepEdits;
+  ledger.used.placementWrites += placementWrites;
+  ledger.used.overwriteDigs += Math.max(0, Math.trunc(Number(mutation.overwriteDigs) || 0));
+  ledger.used.supportWrites += Math.max(0, Math.trunc(Number(mutation.supportWrites) || 0));
+  return true;
+}
 
 async function runBestEffortPersistence(label, fn) {
   try {
@@ -42,25 +112,39 @@ function resolveFollowTargetName({ stepTarget, fallbackUsername }) {
  *   bot: any,
  *   buildId?: string,
  *   commands: Array<Record<string, unknown>>,
+ *   relativeCommands?: Array<Record<string, unknown>> | null,
  *   username?: string,
+ *   decisionPolicy?: Record<string, unknown> | null,
+ *   executionLedger?: ReturnType<typeof createExecutionLedger>,
  *   suppressCompletionChat?: boolean,
  * }} params
- * @returns {Promise<void>}
+ * @returns {Promise<{
+ *   success: boolean,
+ *   logs: Array<Record<string, unknown>>,
+ *   ledger: ReturnType<typeof createExecutionLedger>,
+ *   verification: {
+ *     expectedCount: number,
+ *     verifiedCount: number,
+ *     checkedTargets: Array<{ x: number, y: number, z: number, block: string, matches: boolean, observed: string }>,
+ *     mismatches: Array<{ x: number, y: number, z: number, block: string, observed: string }>,
+ *   },
+ * }>}
  */
 export async function executeCommands({
   bot,
   buildId,
   commands,
+  relativeCommands = null,
   username = 'Commander',
   decisionPolicy = null,
+  executionLedger = null,
   suppressCompletionChat = false,
 }) {
   const stepsLog = []
   let buildSuccess = true
-  let prepEdits = 0;
 
   const maxPathRetriesPerStep = Math.max(1, Math.min(8, Number(decisionPolicy?.maxPathRetriesPerStep || 2)));
-  const maxPrepEdits = Math.max(8, Number(decisionPolicy?.maxPrepEdits || 256));
+  const ledger = executionLedger || createExecutionLedger(decisionPolicy || {});
 
   const pushError = ({ code, message, stepType = 'unknown', step = {}, extra = {} }) => {
     const payload = {
@@ -83,16 +167,42 @@ export async function executeCommands({
     });
   };
 
+  const requiredBlockNames = new Set();
   for (const step of commands) {
+    if (typeof step?.block === 'string') {
+      const blockName = normalizeBlockName(step.block);
+      const current = bot.blockAt(new Vec3(step.x, step.y, step.z));
+      if (current?.name !== blockName) {
+        requiredBlockNames.add(blockName);
+      }
+    }
+    if (typeof step?.fillBlock === 'string') {
+      requiredBlockNames.add(normalizeBlockName(step.fillBlock));
+    }
+  }
+  const inventoryNames = new Set(bot.inventory.items().map((item) => item.name));
+  const missingMaterials = [...requiredBlockNames].filter((name) => !inventoryNames.has(name));
+  if (missingMaterials.length > 0) {
+    buildSuccess = false;
+    pushError({
+      code: ERROR_CODES.INVENTORY_MISSING,
+      message: `Required build materials are unavailable: ${missingMaterials.join(', ')}.`,
+      stepType: 'material_preflight',
+      extra: { missingMaterials },
+    });
+  }
+
+  const executableCommands = missingMaterials.length > 0 ? [] : commands;
+  for (const step of executableCommands) {
     if (step.type === 'move_to') {
       const goal = new goals.GoalBlock(step.x, step.y, step.z);
-      bot.pathfinder.setGoal(goal);
       stepsLog.push({ type: 'moving_to', ...step })
 
       const maxAttempts = maxPathRetriesPerStep;
       let reachedGoal = false;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        bot.pathfinder.setGoal(goal);
         await new Promise(resolve => {
           let resolved = false;
           let onGoalReached = null;
@@ -176,13 +286,13 @@ export async function executeCommands({
           stepType: 'ensure_access',
           step,
         });
+        break;
       }
     } else if (step.type === 'clear_volume') {
       const result = await clearVolume(bot, step, {
         stepsLog,
-        maxPrepEdits: Math.max(8, maxPrepEdits - prepEdits),
+        ledger,
       });
-      prepEdits += result.edits;
       if (!result.ok) {
         buildSuccess = false;
         pushError({
@@ -192,13 +302,13 @@ export async function executeCommands({
           step,
           extra: { edits: result.edits },
         });
+        break;
       }
     } else if (step.type === 'flatten_area') {
       const result = await flattenArea(bot, step, {
         stepsLog,
-        maxPrepEdits: Math.max(8, maxPrepEdits - prepEdits),
+        ledger,
       });
-      prepEdits += result.edits;
       if (!result.ok) {
         buildSuccess = false;
         pushError({
@@ -208,6 +318,7 @@ export async function executeCommands({
           step,
           extra: { edits: result.edits },
         });
+        break;
       }
     } else if (typeof step.block === 'string') {
       const blockName = step.block.replace(/^minecraft:/, '');
@@ -215,6 +326,7 @@ export async function executeCommands({
         allowOverwrite: true,
         autoSupport: true,
         stepsLog,
+        ledger,
       });
       if (!placement.ok) {
         buildSuccess = false
@@ -224,6 +336,12 @@ export async function executeCommands({
           stepType: 'place_block',
           step,
         });
+        if (
+          placement.code === ERROR_CODES.INVENTORY_MISSING ||
+          placement.code === ERROR_CODES.MUTATION_LIMIT
+        ) {
+          break;
+        }
       }
     } else {
       console.warn('⚠️ Unknown instruction:', step);
@@ -234,8 +352,74 @@ export async function executeCommands({
         step,
       });
       buildSuccess = false
+      break;
     }
   } //end comands set
+
+  const expectedTargets = new Map();
+  for (const [index, step] of commands.entries()) {
+    if (typeof step?.block !== 'string') {
+      continue;
+    }
+    const block = normalizeBlockName(step.block);
+    const relativeStep = Array.isArray(relativeCommands) ? relativeCommands[index] : null;
+    expectedTargets.set(`${step.x},${step.y},${step.z}`, {
+      x: step.x,
+      y: step.y,
+      z: step.z,
+      block,
+      relativeTarget: relativeStep && typeof relativeStep.block === 'string'
+        ? {
+          x: relativeStep.x,
+          y: relativeStep.y,
+          z: relativeStep.z,
+        }
+        : null,
+    });
+  }
+
+  const checkedTargets = [];
+  const mismatches = [];
+  for (const expected of expectedTargets.values()) {
+    const observed = normalizeBlockName(
+      bot.blockAt(new Vec3(expected.x, expected.y, expected.z))?.name,
+      'air',
+    );
+    const matches = observed === expected.block;
+    const checked = {
+      x: expected.relativeTarget?.x ?? expected.x,
+      y: expected.relativeTarget?.y ?? expected.y,
+      z: expected.relativeTarget?.z ?? expected.z,
+      block: expected.block,
+      matches,
+      observed,
+      worldTarget: {
+        x: expected.x,
+        y: expected.y,
+        z: expected.z,
+      },
+    };
+    checkedTargets.push(checked);
+    if (!matches) {
+      mismatches.push(checked);
+      stepsLog.push({
+        type: 'error',
+        code: ERROR_CODES.VERIFY_MISMATCH,
+        stepType: 'verify',
+        error: `Expected ${expected.block} but observed ${observed}.`,
+        x: checked.x,
+        y: checked.y,
+        z: checked.z,
+        block: expected.block,
+        observed,
+        worldTarget: checked.worldTarget,
+      });
+    }
+  }
+
+  if (mismatches.length > 0) {
+    buildSuccess = false;
+  }
 
   if (!suppressCompletionChat) {
     if (buildSuccess) {
@@ -268,6 +452,13 @@ export async function executeCommands({
   return {
     success: buildSuccess,
     logs: stepsLog,
+    ledger,
+    verification: {
+      expectedCount: checkedTargets.length,
+      verifiedCount: checkedTargets.length - mismatches.length,
+      checkedTargets,
+      mismatches,
+    },
   };
 }
 
@@ -286,10 +477,21 @@ function canDig(bot, block) {
   return true;
 }
 
+/**
+ * Clear loaded, diggable blocks inside a bounded volume.
+ * @param {any} bot Mineflayer bot instance.
+ * @param {Record<string, unknown>} step Normalized clear-volume action.
+ * @param {{
+ *   stepsLog?: Array<Record<string, unknown>> | null,
+ *   ledger?: ReturnType<typeof createExecutionLedger>,
+ * }} [options]
+ * @returns {Promise<{ ok: boolean, edits: number, code?: string, message?: string }>}
+ * @throws {Error} Only when an unexpected bot API error escapes the guarded dig calls.
+ */
 async function clearVolume(bot, step, options = {}) {
   const {
     stepsLog = null,
-    maxPrepEdits = 256,
+    ledger = createExecutionLedger(),
   } = options;
 
   const width = Math.max(1, Math.min(64, Number(step.width) || 1));
@@ -300,10 +502,6 @@ async function clearVolume(bot, step, options = {}) {
   for (let dx = 0; dx < width; dx += 1) {
     for (let dy = 0; dy < height; dy += 1) {
       for (let dz = 0; dz < length; dz += 1) {
-        if (edits >= maxPrepEdits) {
-          return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
-        }
-
         const pos = new Vec3(step.x + dx, step.y + dy, step.z + dz);
         const block = bot.blockAt(pos);
         if (!block || block.name === 'air') {
@@ -311,6 +509,10 @@ async function clearVolume(bot, step, options = {}) {
         }
         if (!canDig(bot, block)) {
           return { ok: false, code: ERROR_CODES.TARGET_OBSTRUCTED, message: 'cannot dig target block', edits };
+        }
+
+        if (!reserveMutation(ledger, { prepEdits: 1 })) {
+          return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
         }
 
         try {
@@ -332,10 +534,21 @@ async function clearVolume(bot, step, options = {}) {
   return { ok: true, edits };
 }
 
+/**
+ * Clear headroom and create a bounded support plane.
+ * @param {any} bot Mineflayer bot instance.
+ * @param {Record<string, unknown>} step Normalized flatten action.
+ * @param {{
+ *   stepsLog?: Array<Record<string, unknown>> | null,
+ *   ledger?: ReturnType<typeof createExecutionLedger>,
+ * }} [options]
+ * @returns {Promise<{ ok: boolean, edits: number, code?: string, message?: string }>}
+ * @throws {Error} Only when an unexpected bot API error escapes guarded world edits.
+ */
 async function flattenArea(bot, step, options = {}) {
   const {
     stepsLog = null,
-    maxPrepEdits = 256,
+    ledger = createExecutionLedger(),
   } = options;
 
   const width = Math.max(1, Math.min(64, Number(step.width) || 1));
@@ -353,10 +566,6 @@ async function flattenArea(bot, step, options = {}) {
       const z = step.z + dz;
 
       for (let y = targetY + 1; y <= targetY + clearHeight; y += 1) {
-        if (edits >= maxPrepEdits) {
-          return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
-        }
-
         const pos = new Vec3(x, y, z);
         const block = bot.blockAt(pos);
         if (!block || block.name === 'air') {
@@ -365,6 +574,10 @@ async function flattenArea(bot, step, options = {}) {
 
         if (!canDig(bot, block)) {
           return { ok: false, code: ERROR_CODES.TARGET_OBSTRUCTED, message: 'cannot clear flatten_area obstruction', edits };
+        }
+
+        if (!reserveMutation(ledger, { prepEdits: 1 })) {
+          return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
         }
 
         try {
@@ -381,16 +594,15 @@ async function flattenArea(bot, step, options = {}) {
         }
       }
 
-      if (edits >= maxPrepEdits) {
-        return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
-      }
-
       const basePos = new Vec3(x, targetY, z);
       const existing = bot.blockAt(basePos);
       if (!existing || existing.name === 'air' || existing.name !== fillBlock) {
         if (existing && existing.name !== 'air' && existing.name !== fillBlock) {
           if (!canDig(bot, existing)) {
             return { ok: false, code: ERROR_CODES.TARGET_OBSTRUCTED, message: 'cannot dig non-fill base block', edits };
+          }
+          if (!reserveMutation(ledger, { prepEdits: 1, overwriteDigs: 1 })) {
+            return { ok: false, code: ERROR_CODES.PREP_LIMIT, message: 'prep edit limit reached', edits };
           }
           try {
             await bot.dig(existing, true);
@@ -410,6 +622,8 @@ async function flattenArea(bot, step, options = {}) {
           allowOverwrite: false,
           autoSupport: true,
           stepsLog,
+          ledger,
+          countsAsPrep: true,
         });
         if (!placement.ok) {
           return { ok: false, code: placement.code, message: placement.message, edits };
@@ -432,6 +646,9 @@ async function flattenArea(bot, step, options = {}) {
  * @param {boolean} [options.skipIfAlreadyCorrect=true] - Skip if correct block already present
  * @param {number} [options.maxDistance=3.5] - Max distance before moving
  * @param {Array} [options.stepsLog] - Optional stepsLog array to push logs into
+ * @param {ReturnType<typeof createExecutionLedger>} [options.ledger] Shared mutation ledger.
+ * @param {boolean} [options.countsAsPrep=false] Whether writes count toward prep budget.
+ * @param {boolean} [options.isSupportWrite=false] Whether writes are automatic supports.
  * @returns {Promise<{ ok: boolean, code?: string, message?: string }>}
  */
 async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
@@ -441,7 +658,10 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
     maxDistance = 3.5,
     autoSupport = false,
     supportDepth = 4,
-    stepsLog = null
+    stepsLog = null,
+    ledger = createExecutionLedger(),
+    countsAsPrep = false,
+    isSupportWrite = false,
   } = options;
 
   const existing = bot.blockAt(pos);
@@ -456,6 +676,13 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
       if (!canDig(bot, existing)) {
         stepsLog?.push({ type: 'error', code: ERROR_CODES.TARGET_OBSTRUCTED, error: 'cannot dig existing block', pos });
         return { ok: false, code: ERROR_CODES.TARGET_OBSTRUCTED, message: 'cannot dig existing block' };
+      }
+      if (!reserveMutation(ledger, { prepEdits: 1, overwriteDigs: 1 })) {
+        return {
+          ok: false,
+          code: ERROR_CODES.MUTATION_LIMIT,
+          message: 'destructive edit limit reached',
+        };
       }
       try {
         console.log(`🪓 Removing ${existing.name} at ${pos}`);
@@ -475,6 +702,7 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
     const supportResult = await ensureSupportColumn(bot, pos, blockName, {
       maxDepth: supportDepth,
       stepsLog,
+      ledger,
     });
     if (!supportResult.ok) {
       return supportResult;
@@ -496,6 +724,18 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
   }
 
   try {
+    if (!reserveMutation(ledger, {
+      prepEdits: countsAsPrep ? 1 : 0,
+      placementWrites: 1,
+      supportWrites: isSupportWrite ? 1 : 0,
+    })) {
+      return {
+        ok: false,
+        code: ERROR_CODES.MUTATION_LIMIT,
+        message: 'placement mutation limit reached',
+      };
+    }
+
     await bot.equip(item, 'hand');
 
     const botPos = bot.entity.position.floored();
@@ -520,10 +760,24 @@ async function placeBlockWithOverwrite(bot, pos, blockName, options = {}) {
   }
 }
 
+/**
+ * Fill a bounded vertical support column below a placement target.
+ * @param {any} bot Mineflayer bot instance.
+ * @param {Vec3} pos Placement target.
+ * @param {string} blockName Normalized material name.
+ * @param {{
+ *   maxDepth?: number,
+ *   stepsLog?: Array<Record<string, unknown>> | null,
+ *   ledger?: ReturnType<typeof createExecutionLedger>,
+ * }} [options]
+ * @returns {Promise<{ ok: boolean, code?: string, message?: string }>}
+ * @throws {Error} Only when an unexpected bot API error escapes guarded placement calls.
+ */
 async function ensureSupportColumn(bot, pos, blockName, options = {}) {
   const {
     maxDepth = 4,
     stepsLog = null,
+    ledger = createExecutionLedger(),
   } = options;
 
   const directBelow = bot.blockAt(pos.offset(0, -1, 0));
@@ -558,6 +812,8 @@ async function ensureSupportColumn(bot, pos, blockName, options = {}) {
       autoSupport: false,
       stepsLog,
       maxDistance: 4.5,
+      ledger,
+      isSupportWrite: true,
     });
 
     if (!placed.ok) {

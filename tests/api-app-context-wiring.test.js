@@ -7,6 +7,7 @@ import path from 'node:path';
 
 const appContextModuleUrl = pathToFileURL(path.resolve('apps/api/app-context.js')).href;
 const REQUIRED_ENV = {
+  BUILDERBOT_DISTRIBUTION_MODE: 'local',
   OPENAI_API_KEY: 'test-key',
   STRIPE_SECRET_KEY: 'sk_test_123',
   AUTH0_DOMAIN: 'example.auth0.com',
@@ -68,18 +69,22 @@ test('createAppContext wires route deps and middleware factories', async () => {
   }
 });
 
-test('createAppContext defaults jwtCheck to local auth without Auth0 env', async () => {
-  const envKeys = ['OPENAI_API_KEY', 'STRIPE_SECRET_KEY', 'AUTH0_DOMAIN', 'AUTH0_AUDIENCE'];
+test('createAppContext starts local mode without hosted provider credentials', async () => {
+  const envKeys = [
+    'BUILDERBOT_DISTRIBUTION_MODE',
+    'OPENAI_API_KEY',
+    'STRIPE_SECRET_KEY',
+    'AUTH0_DOMAIN',
+    'AUTH0_AUDIENCE',
+  ];
   const previous = Object.fromEntries(
     envKeys.map((key) => [key, process.env[key]]),
   );
   previous.BUILDERBOT_SQLITE_PATH = process.env.BUILDERBOT_SQLITE_PATH;
 
-  process.env.OPENAI_API_KEY = 'test-key';
-  process.env.STRIPE_SECRET_KEY = 'sk_test_123';
-  delete process.env.AUTH0_DOMAIN;
-  delete process.env.AUTH0_AUDIENCE;
-  delete process.env.BUILDERBOT_DISTRIBUTION_MODE;
+  for (const key of envKeys) {
+    delete process.env[key];
+  }
   process.env.BUILDERBOT_SQLITE_PATH = createTempSqlitePath();
 
   try {
@@ -98,6 +103,15 @@ test('createAppContext defaults jwtCheck to local auth without Auth0 env', async
     assert.equal(nextCalled, true);
     assert.equal(req.auth.payload.sub, 'local:default');
     assert.equal(req.auth.payload.email, 'local@builderbot.local');
+    assert.equal(context.routeDeps.stripe, null);
+    await assert.rejects(
+      context.routeDeps.createCompletionWithFallback({
+        primaryModel: 'test-primary',
+        fallbackModel: 'test-fallback',
+        messages: [],
+      }),
+      /OPENAI_API_KEY/,
+    );
 
     const localUser = await context.routeDeps.getUserById({ userId: 'local:default' });
     assert.equal(localUser.tier, 'admin');

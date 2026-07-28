@@ -87,3 +87,51 @@ test('appendDecisionFailure contributes to failure digest', () => {
   assert.equal(context.failureDigest.length >= 1, true);
   assert.equal(context.failureDigest[0].code, 'ERR_PATH_TIMEOUT');
 });
+
+test('buildDecisionWorldContext checks the actual footprint and bounds path probes', () => {
+  const bot = createMockBot();
+  let probeCount = 0;
+  bot.pathfinder.getPathTo = () => {
+    probeCount += 1;
+    return {
+      status: 'success',
+      cost: 1,
+      time: 1,
+      visitedNodes: 1,
+      generatedNodes: 1,
+      path: [new Vec3(0, 64, 0)],
+    };
+  };
+  bot.blockAt = (pos) => {
+    if (pos.x === 3 && pos.z === 0 && pos.y === 64) {
+      return { name: 'lava' };
+    }
+    if (pos.y <= 63) {
+      return { name: 'stone' };
+    }
+    return { name: 'air' };
+  };
+
+  const context = buildDecisionWorldContext({
+    bot,
+    prompt: 'build a wide floor',
+    decisionPolicy: {
+      maxScanRadius: 8,
+      maxAnchorCandidates: 2,
+      pathProbeTimeoutMs: 400,
+      minAnchorScore: 45,
+    },
+    footprint: {
+      minX: 0,
+      maxX: 3,
+      minZ: 0,
+      maxZ: 0,
+      height: 1,
+    },
+  });
+
+  assert.equal(probeCount, 2);
+  assert.equal(context.anchorCandidates.some((candidate) => (
+    candidate.x === 0 && candidate.z === 0
+  )), false);
+});

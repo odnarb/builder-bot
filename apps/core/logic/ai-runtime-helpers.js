@@ -19,7 +19,7 @@ export const FREE_TIER_THROTTLE_ERROR_CODE = 'FREE_TIER_THROTTLED_GUARD_ACTIVE';
  * Create runtime AI helper functions bound to provider + parser dependencies.
  *
  * @param {{
- *   openai: import('openai').OpenAI,
+ *   openai: import('openai').OpenAI | null,
  *   parsePrompt: (prompt: string) => Array<Record<string, any>>,
  *   normalizeInstructionPlan: (payload: any) => { schemaVersion: string, actions: Array<Record<string, any>>, tags: string[] },
  *   optimizeInstructionPlan: (payload: { schemaVersion: string, actions: Array<Record<string, any>>, tags: string[] }) => { schemaVersion: string, actions: Array<Record<string, any>>, tags: string[] },
@@ -29,6 +29,7 @@ export const FREE_TIER_THROTTLE_ERROR_CODE = 'FREE_TIER_THROTTLED_GUARD_ACTIVE';
  *     tierFeaturePolicy: Record<string, any>,
  *   }) => Record<string, any>,
  * }} deps
+ * @returns {Record<string, Function>} AI runtime helper functions bound to the supplied dependencies.
  */
 export function createAiRuntimeHelpers({
     openai,
@@ -46,8 +47,13 @@ export function createAiRuntimeHelpers({
      *   maxTokens?: number,
      * }} params
      * @returns {Promise<{ text: string, modelUsed: string, fallbackUsed: boolean }>}
+     * @throws {Error} When OpenAI is not configured or both model requests fail.
      */
     async function createCompletionWithFallback({ primaryModel, fallbackModel, messages, maxTokens }) {
+        if (!openai) {
+            throw new Error('OpenAI is not configured. Set OPENAI_API_KEY before using AI build generation.');
+        }
+
         const callModel = async (model) => openai.chat.completions.create({
             model,
             messages,

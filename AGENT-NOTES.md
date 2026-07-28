@@ -1,5 +1,17 @@
 # Agent Notes
 
+## 2026-07-28 Decision Engine Reliability
+
+- Implemented shared validation, relative-coordinate verification, cumulative mutation accounting, terminal failure classification, conservative local parsing, footprint-aware site screening, material preflight, and bounded patch context.
+- Automated verification: `npm test` passes 195 tests; architecture, route-security, and secret checks pass.
+- Human follow-up needed: run the plan's Paper/Mineflayer smoke matrix on a disposable world before treating terrain mutation and obstacle recovery as production-proven.
+
+## 2026-06-27 Local Firestore Emulator
+
+- Verified the Firestore emulator starts locally with Firebase CLI when `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`.
+- Verified `@google-cloud/firestore` can write/read/delete against `FIRESTORE_EMULATOR_HOST=127.0.0.1:8080`.
+- Verified `PRE_SCALE_PERSISTENCE_MODE=firestore` enables the repo economics persistence path against the emulator.
+
 ## 2026-06-07 Branching Note
 
 - Repo instructions say to create new code branches from `dev`, but no local or remote `dev` branch exists.

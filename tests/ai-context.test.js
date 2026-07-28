@@ -52,11 +52,16 @@ test('summarizeBlocks sorts by count desc', () => {
 
 test('buildContextSnapshot emits compact snapshot and token estimate', () => {
   const context = {
-    identity: { userId: 'auth0|abc', tier: 'pro' },
+    capabilities: { tier: 'pro', maxBlocksPerBuild: 2000 },
     bot: { position: { x: 1, y: 2, z: 3 }, health: 20, food: 18, biome: 'plains' },
     inventory: [{ name: 'stone', count: 64 }],
     nearbyEntities: [{ name: 'cow', type: 'mob', distance: 5 }],
     nearbyBlocks: [{ name: 'grass_block', count: 10 }],
+    terrainProfile: { flatnessScore: 0.8 },
+    anchorCandidates: [{ x: 2, y: 64, z: 2, score: 90 }],
+    hazards: { hazardSampleRatio: 0 },
+    reachability: { successCount: 1 },
+    failureDigest: [{ code: 'ERR_PATH_TIMEOUT' }],
   };
 
   const snapshot = buildContextSnapshot({
@@ -73,6 +78,11 @@ test('buildContextSnapshot emits compact snapshot and token estimate', () => {
   assert.ok(Array.isArray(snapshot.inventorySummary));
   assert.ok(Array.isArray(snapshot.nearbyEntitySummary));
   assert.ok(Array.isArray(snapshot.nearbyBlockSummary));
+  assert.equal(snapshot.capabilities.tier, 'pro');
+  assert.equal(snapshot.identity, undefined);
+  assert.equal(snapshot.decision.terrainProfile.flatnessScore, 0.8);
+  assert.equal(snapshot.decision.anchorCandidates.length, 1);
+  assert.equal(snapshot.decision.failureDigest[0].code, 'ERR_PATH_TIMEOUT');
   assert.ok(inputEstimate > 0);
 });
 

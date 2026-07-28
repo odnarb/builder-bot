@@ -39,6 +39,13 @@ function resolveAiUsageKey(req, tier) {
 /**
  * Build runtime (provider/middleware/factory) route dependencies.
  * @param {{ staticRouteDeps: Record<string, any> }} params
+ * @returns {{
+ *   jwtCheck: Function,
+ *   requireAdminAccess: Function,
+ *   asyncHandler: Function,
+ *   runtimeRouteDeps: Record<string, any>,
+ * }} Runtime dependencies used to compose the API.
+ * @throws {Error} When runtime configuration, local storage, or an enabled provider cannot initialize.
  */
 export function createRuntimeRouteDeps({ staticRouteDeps }) {
     const runtimeModeConfig = getRuntimeModeConfig();
@@ -54,11 +61,15 @@ export function createRuntimeRouteDeps({ staticRouteDeps }) {
         updateUserTier: localModeRouteDeps.updateUserTier || staticRouteDeps.updateUserTier,
     };
 
-    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-        apiVersion: '2024-04-10',
-    });
-
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const stripe = runtimeModeConfig.billingEnabled
+        ? new Stripe(process.env.STRIPE_SECRET_KEY, {
+            apiVersion: '2024-04-10',
+        })
+        : null;
+    const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+    const openai = openaiApiKey
+        ? new OpenAI({ apiKey: openaiApiKey })
+        : null;
 
     const asyncHandler = fn => (req, res, next) => {
         Promise.resolve(fn(req, res, next)).catch(next);

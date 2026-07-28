@@ -8,7 +8,8 @@ import {
   getTierFeaturePolicy,
   resolveTier,
 } from '../api/config/tier-policy.js';
-import { executeCommands } from './execute-commands.js';
+import { validateInstructionPlan } from '../core/logic/build-validator.js';
+import { createExecutionLedger, executeCommands } from './execute-commands.js';
 import { runDecisionEngineBuild } from './decision-engine.js';
 import { createDecisionTelemetryScope } from './decision-telemetry.js';
 import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
@@ -104,6 +105,7 @@ function buildAiContext({
     promptWords: prompt.trim().split(/\s+/).length,
     decisionPolicyTier: resolvedDecisionPolicy.tier,
     maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
+    maxLocalRetries: resolvedDecisionPolicy.maxLocalRetries,
     maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
     maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
     maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
@@ -115,10 +117,6 @@ function buildAiContext({
   }
 
   return {
-    identity: {
-      userId: process.env.USER_ID || process.env.COMMANDER_UUID || null,
-      tier: normalizeCommanderTier(commander),
-    },
     bot: {
       position: position ? {
         x: Math.floor(position.x),
@@ -150,6 +148,7 @@ function buildAiContext({
       maxPrepEdits: resolvedDecisionPolicy.maxPrepEdits,
       maxPrepVolume: resolvedDecisionPolicy.maxPrepVolume,
       maxReplanAttempts: resolvedDecisionPolicy.maxReplanAttempts,
+      maxLocalRetries: resolvedDecisionPolicy.maxLocalRetries,
       maxPathRetriesPerStep: resolvedDecisionPolicy.maxPathRetriesPerStep,
       allowAggressiveRecovery: resolvedDecisionPolicy.allowAggressiveRecovery,
     },
@@ -164,22 +163,10 @@ function estimatePromptTokens(prompt) {
   return Math.ceil(String(prompt || '').length / 4);
 }
 
-function overTierBlockLimit({ commander, numBlocks }) {
-  const tier = normalizeCommanderTier(commander);
-  const tierFeaturePolicy = getTierFeaturePolicy(tier);
-  return Number(numBlocks) > Number(tierFeaturePolicy.maxBlocksPerBuild);
-}
-
 function overTierPromptLimit({ commander, prompt }) {
   const tier = normalizeCommanderTier(commander);
   const tierAiPolicy = getTierAiPolicy(tier);
   return estimatePromptTokens(prompt) > Number(tierAiPolicy.maxInputTokensPerRequest);
-}
-
-function countPlacementSteps(steps) {
-  return Array.isArray(steps)
-    ? steps.filter((step) => typeof step?.block === 'string').length
-    : 0;
 }
 
 function collectRequiredBlockNames(commands) {
@@ -202,22 +189,29 @@ function collectRequiredBlockNames(commands) {
     .filter(Boolean))];
 }
 
-async function ensureCreativeMaterialsForCommands({ bot, commands, materialCache }) {
-  const cache = materialCache instanceof Set ? materialCache : new Set();
+/**
+ * Provision and verify every material before the executor can mutate terrain.
+ * @param {{ bot: any, commands: Array<Record<string, unknown>> }} params
+ * @returns {Promise<void>}
+ * @throws {Error} When a required block is unknown or remains unavailable.
+ */
+async function ensureCreativeMaterialsForCommands({ bot, commands }) {
   const needed = collectRequiredBlockNames(commands)
-    .filter((name) => !cache.has(name));
+    .filter((name) => !bot.inventory.items().some((item) => item.name === name));
 
   if (needed.length === 0) {
     return;
   }
 
   bot.chat(`Giving self the materials needed for the build...`);
+  const missing = [];
 
   for (const blockName of needed) {
     try {
       const itemId = bot?.registry?.itemsByName?.[blockName]?.id;
       if (itemId === undefined) {
         console.warn(`⚠️ Unknown block type: ${blockName}`);
+        missing.push(blockName);
         continue;
       }
 
@@ -227,11 +221,19 @@ async function ensureCreativeMaterialsForCommands({ bot, commands, materialCache
         bot.chat(`/give ${bot.username} minecraft:${blockName} 999`);
         await bot.waitForTicks(20);
       }
-      cache.add(blockName);
-      console.log(`✅ Gave ${blockName}`);
+      if (bot.inventory.items().some((item) => item.name === blockName)) {
+        console.log(`✅ Material ready: ${blockName}`);
+      } else {
+        missing.push(blockName);
+      }
     } catch (error) {
       console.warn(`❌ Failed to give ${blockName}: ${error.message}`);
+      missing.push(blockName);
     }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Required build materials are unavailable: ${missing.join(', ')}.`);
   }
 }
 
@@ -473,11 +475,35 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
           y: bot.entity.position.y,
           z: bot.entity.position.z,
         };
-        const materialCache = new Set();
-
-        async function requestPlanSteps({ replanAttempt = 0, failureDigest = [], allowLocal = true } = {}) {
+        /**
+         * Resolve and validate one local, AI, or patch plan in the shared schema.
+         * @param {{
+         *   replanAttempt?: number,
+         *   failureDigest?: Array<Record<string, unknown>>,
+         *   completedTargets?: Array<Record<string, unknown>>,
+         *   remainingTargets?: Array<Record<string, unknown>>,
+         *   remainingBudgets?: Record<string, unknown> | null,
+         *   allowLocal?: boolean,
+         * }} [options]
+         * @returns {Promise<{
+         *   steps: Array<Record<string, unknown>>,
+         *   tags: string[],
+         *   actionCount: number,
+         *   source: string,
+         * }>}
+         * @throws {Error} When planning fails or the plan violates shared policy.
+         */
+        async function requestPlanSteps({
+          replanAttempt = 0,
+          failureDigest = [],
+          completedTargets = [],
+          remainingTargets = [],
+          remainingBudgets = null,
+          allowLocal = true,
+        } = {}) {
+          let plannedBuild = null;
           if (allowLocal && replanAttempt === 0) {
-            const localPlan = createLocalBuildPlan({
+            plannedBuild = createLocalBuildPlan({
               prompt,
               bot,
               decisionPolicy,
@@ -485,51 +511,75 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
               buildStartOffset: BUILD_START_OFFSET,
             });
 
-            if (localPlan) {
+            if (plannedBuild) {
               console.log(`📐 Using local build planner for prompt: ${prompt}`);
-              return localPlan;
             }
           }
 
-          bot.chat(`📐 Asking AI to generate build details...`);
-          const aiPayload = await getStructureAndTagsFromAI({
-            message: prompt,
-            tier: normalizedTier,
-            context: buildAiContext({
-              bot,
-              commander: { ...commander, tier: normalizedTier },
-              prompt,
-              decisionPolicy,
-              triggerReason: replanAttempt > 0 ? 'build_failure' : null,
-              taskState: replanAttempt > 0
-                ? {
-                  phase: 'patch_replan',
-                  buildFailure: true,
-                  replanAttempt,
-                  maxReplanAttempts: decisionPolicy.maxReplanAttempts,
-                }
-                : {
-                  phase: 'initial_plan',
-                },
-              patchPlan: replanAttempt > 0
-                ? {
-                  mode: 'patch_replan',
-                  replanAttempt,
-                  maxReplanAttempts: decisionPolicy.maxReplanAttempts,
-                  failureDigest: Array.isArray(failureDigest) ? failureDigest.slice(-6) : [],
-                }
-                : null,
-              failureDigest,
-            }),
-          });
+          if (!plannedBuild) {
+            bot.chat(`📐 Asking AI to generate build details...`);
+            const aiPayload = await getStructureAndTagsFromAI({
+              message: prompt,
+              tier: normalizedTier,
+              context: buildAiContext({
+                bot,
+                commander: { ...commander, tier: normalizedTier },
+                prompt,
+                decisionPolicy,
+                triggerReason: replanAttempt > 0 ? 'build_failure' : null,
+                taskState: replanAttempt > 0
+                  ? {
+                    phase: 'patch_replan',
+                    buildFailure: true,
+                    replanAttempt,
+                    maxReplanAttempts: decisionPolicy.maxReplanAttempts,
+                  }
+                  : {
+                    phase: 'initial_plan',
+                  },
+                patchPlan: replanAttempt > 0
+                  ? {
+                    mode: 'patch_replan',
+                    replanAttempt,
+                    maxReplanAttempts: decisionPolicy.maxReplanAttempts,
+                    failureDigest: Array.isArray(failureDigest) ? failureDigest.slice(-6) : [],
+                    completedTargets: Array.isArray(completedTargets) ? completedTargets.slice(0, 64) : [],
+                    remainingTargets: Array.isArray(remainingTargets) ? remainingTargets.slice(0, 64) : [],
+                    remainingBudgets,
+                  }
+                  : null,
+                failureDigest,
+              }),
+            });
 
-          const normalizedPlan = normalizeInstructionPlan(aiPayload);
-          const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan);
+            const normalizedPlan = normalizeInstructionPlan(aiPayload);
+            const { blocks, tags } = toLegacyBlocksAndTags(normalizedPlan);
+            plannedBuild = {
+              steps: blocks,
+              tags,
+              actionCount: normalizedPlan.actions.length,
+              source: 'ai',
+            };
+          }
+
+          const validation = validateInstructionPlan({
+            planPayload: { actions: plannedBuild.steps, tags: plannedBuild.tags },
+            tier: normalizedTier,
+            tierFeaturePolicy: {
+              ...getTierFeaturePolicy(normalizedTier),
+              maxPrepVolume: decisionPolicy.maxPrepVolume,
+            },
+          });
+          if (!validation.valid) {
+            throw new Error(validation.errors[0]?.message || 'Build plan failed safety validation.');
+          }
+
+          const { blocks, tags } = toLegacyBlocksAndTags(validation.normalizedPlan);
           return {
             steps: blocks,
             tags,
-            actionCount: normalizedPlan.actions.length,
-            source: 'ai',
+            actionCount: validation.normalizedPlan.actions.length,
+            source: plannedBuild.source || 'ai',
           };
         }
 
@@ -563,8 +613,10 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
             );
           }
         } catch (error) {
-          steps = [];
-          bot.chat(`❌ Sorry, could not get a valid build from AI. This has been logged.`);
+          const safeMessage = error?.code === 'ERR_NO_SAFE_ANCHOR' || error instanceof RangeError
+            ? error.message
+            : 'Sorry, a safe and valid build plan could not be created. Please try again.';
+          bot.chat(`❌ ${safeMessage}`);
 
           if (buildId) {
             await runBestEffortPersistence(
@@ -572,14 +624,16 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
               () => updateUserBuild({
                 buildId,
                 build: {
-                  error: error.stack,
-                  error_message: error.message
+                  error: true,
+                  error_code: error?.code || 'ERR_PLAN_INVALID',
+                  error_message: safeMessage,
                 }
               })
             );
           }
 
-          console.error(`❌ Could not parse AI commands as JSON: ${error.stack}`);
+          console.error(`❌ Could not create build plan: ${error.stack}`);
+          return;
         }
 
         bot.chat(`💾 Saving build steps...`);
@@ -591,32 +645,8 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
         }
 
         if (steps.length > 0) {
-          const initialPlacementCount = countPlacementSteps(steps);
-
-          if (overTierBlockLimit({ commander, numBlocks: initialPlacementCount })) {
-            const maxBlocksPerBuild = getTierFeaturePolicy(normalizedTier).maxBlocksPerBuild;
-            bot.chat(`⚠️ Tier ${normalizedTier} allows up to ${maxBlocksPerBuild} blocks per build (${initialPlacementCount} requested).`);
-            console.log(`⚠️ User's tier (${normalizedTier}) is too low for ${initialPlacementCount} blocks to be placed.`);
-
-            fireAndForgetLogEntry({
-              type: "block_tier_limit",
-              message: "user",
-              data: {
-                tier: normalizedTier,
-                requestedPlacements: initialPlacementCount,
-                maxBlocksPerBuild,
-              },
-              level: 1
-            });
-
-            return;
-          }
-
-          if (bot?.creative?.clearInventory) {
-            await bot.creative.clearInventory();
-          }
-
           bot.chat(`Attempting to build...`);
+          const executionLedger = createExecutionLedger(decisionPolicy);
 
           const decisionResult = await runDecisionEngineBuild({
             prompt,
@@ -647,31 +677,35 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
               await ensureCreativeMaterialsForCommands({
                 bot,
                 commands: adjustedCommands,
-                materialCache,
               });
 
               return executeCommands({
                 bot,
                 buildId,
                 commands: adjustedCommands,
+                relativeCommands: commands,
                 username,
                 decisionPolicy,
+                executionLedger,
                 suppressCompletionChat: true,
               });
             },
-            requestPatchPlan: async ({ replanAttempt, failureDigest }) => {
+            requestPatchPlan: async ({
+              replanAttempt,
+              failureDigest,
+              completedTargets,
+              remainingTargets,
+              remainingBudgets,
+            }) => {
               const patchPlan = await requestPlanSteps({
                 replanAttempt,
                 failureDigest,
+                completedTargets,
+                remainingTargets,
+                remainingBudgets,
                 allowLocal: false,
               });
               decisionTelemetryScope.recordPlanSource(patchPlan.source || 'ai', { isPatch: true });
-
-              const patchPlacementCount = countPlacementSteps(patchPlan.steps);
-              if (overTierBlockLimit({ commander, numBlocks: patchPlacementCount })) {
-                const maxBlocksPerBuild = getTierFeaturePolicy(normalizedTier).maxBlocksPerBuild;
-                throw new Error(`Patch plan exceeds tier block limits (${patchPlacementCount}/${maxBlocksPerBuild}).`);
-              }
 
               if (buildId) {
                 await runBestEffortPersistence(
@@ -728,6 +762,7 @@ export async function handlePlayerCommand({ commander, bot, message, username = 
                   success: decisionResult.success,
                   attempts: decisionResult.attempts.length,
                   replans: decisionResult.replanCount,
+                  localRetries: decisionResult.localRetryCount,
                   failureReason: decisionResult.failureReason || null,
                   planSource: initialPlanSource,
                   decisionTelemetry,

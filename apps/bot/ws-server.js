@@ -4,8 +4,12 @@ import pkg from 'mineflayer-pathfinder';
 const { goals } = pkg;
 
 import { handlePlayerCommand, runBuildCommandSingleFlight } from './command-router.js';
-import { executeCommands } from './execute-commands.js';
+import { runDecisionEngineBuild } from './decision-engine.js';
+import { createExecutionLedger, executeCommands } from './execute-commands.js';
+import { validateInstructionPlan } from '../core/logic/build-validator.js';
+import { getTierFeaturePolicy } from '../api/config/tier-policy.js';
 import { normalizeInstructionPlan, toLegacyBlocksAndTags } from '../shared-utils/instruction-schema.js';
+import { offsetStructure } from '../shared-utils/offsetStructure.js';
 import { resolveCommanderUsername } from './player-identity.js';
 import { resolveDecisionTierPolicy } from './decision-tier-policy.js';
 
@@ -136,6 +140,12 @@ export function isAuthorizedWsClient({ request, expectedAuthToken }) {
   return safeTokenEquals(expectedToken, providedToken);
 }
 
+/**
+ * Start the authenticated loopback WebSocket control server.
+ * @param {{ bot: any, commander: Record<string, unknown> }} params
+ * @returns {void}
+ * @throws {Error} When the WebSocket server cannot bind.
+ */
 export function startBotServer({ bot, commander }) {
   console.log(`Starting bot WebSocketServer on port 3002...`)
   const expectedWsAuthToken = String(process.env.AUTH_TOKEN || '').trim();
@@ -292,18 +302,53 @@ export function startBotServer({ bot, commander }) {
           }
 
           const normalizedPlan = normalizeInstructionPlan(instructionPlanPayload);
-          const { blocks } = toLegacyBlocksAndTags(normalizedPlan);
+          const decisionPolicy = resolveDecisionTierPolicy(commander?.tier);
+          const validation = validateInstructionPlan({
+            planPayload: normalizedPlan,
+            tier: decisionPolicy.tier,
+            tierFeaturePolicy: {
+              ...getTierFeaturePolicy(decisionPolicy.tier),
+              maxPrepVolume: decisionPolicy.maxPrepVolume,
+            },
+          });
+          if (!validation.valid) {
+            ws.send(JSON.stringify({
+              type: 'instruction_plan_rejected',
+              reason: validation.errors[0]?.code || 'invalid_plan',
+              text: validation.errors[0]?.message || 'Instruction plan failed safety validation.',
+            }));
+            return;
+          }
+
+          const { blocks } = toLegacyBlocksAndTags(validation.normalizedPlan);
+          const buildOrigin = {
+            x: bot.entity.position.x,
+            y: bot.entity.position.y,
+            z: bot.entity.position.z,
+          };
+          const executionLedger = createExecutionLedger(decisionPolicy);
+          let decisionResult = null;
           const started = await runBuildCommandSingleFlight({
             bot,
             username,
             commandType: 'instruction_plan',
             busyMessage: "⏳ Bot is already running a build. Try again when it finishes.",
-            run: async () => executeCommands({
-              bot,
-              commands: blocks,
-              username,
-              decisionPolicy: resolveDecisionTierPolicy(commander?.tier),
-            }),
+            run: async () => {
+              decisionResult = await runDecisionEngineBuild({
+                prompt: 'WebSocket instruction plan',
+                decisionPolicy,
+                initialCommands: blocks,
+                executePlan: ({ commands }) => executeCommands({
+                  bot,
+                  commands: offsetStructure(commands, buildOrigin),
+                  relativeCommands: commands,
+                  username,
+                  decisionPolicy,
+                  executionLedger,
+                  suppressCompletionChat: true,
+                }),
+              });
+            },
           });
 
           if (!started) {
@@ -314,9 +359,17 @@ export function startBotServer({ bot, commander }) {
             return;
           }
 
+          if (!decisionResult?.success) {
+            ws.send(JSON.stringify({
+              type: 'instruction_plan_rejected',
+              reason: decisionResult?.failureReason || 'execution_failed',
+            }));
+            return;
+          }
+
           ws.send(JSON.stringify({
             type: 'instruction_plan_applied',
-            actionCount: normalizedPlan.actions.length,
+            actionCount: validation.normalizedPlan.actions.length,
           }));
           return;
         }

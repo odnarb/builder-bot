@@ -7,15 +7,18 @@ const HIGH_DETAIL_TRIGGERS = new Set([
 ]);
 
 const DELTA_KEYS = Object.freeze([
-    'identity',
-    'billingState',
+    'capabilities',
     'bot',
     'taskState',
     'inventory',
     'nearbyEntities',
     'nearbyBlocks',
+    'terrainProfile',
+    'anchorCandidates',
+    'hazards',
+    'reachability',
+    'failureDigest',
     'ragSnippets',
-    'usageCounters',
 ]);
 
 const MIN_WORLD_MEMO_REFRESH_MS = 30_000;
@@ -300,15 +303,8 @@ export function withSnapshotHints(context = {}, options = {}) {
  */
 function toComparableDeltaValue(key, context) {
     switch (key) {
-        case 'identity':
-            return {
-                userId: context?.identity?.userId || null,
-                tier: context?.identity?.tier || null,
-            };
-        case 'billingState':
-            return {
-                plan: context?.billingState?.plan || null,
-            };
+        case 'capabilities':
+            return truncateToCharBudget(context?.capabilities || {}, 400);
         case 'bot':
             return normalizeBotState(context?.bot || {});
         case 'taskState':
@@ -323,10 +319,12 @@ function toComparableDeltaValue(key, context) {
             return Array.isArray(context?.ragSnippets)
                 ? context.ragSnippets.slice(0, 3)
                 : [];
-        case 'usageCounters':
-            return {
-                requestCount: Number(context?.usageCounters?.requestCount || 0),
-            };
+        case 'terrainProfile':
+        case 'anchorCandidates':
+        case 'hazards':
+        case 'reachability':
+        case 'failureDigest':
+            return truncateToCharBudget(context?.[key] || null, 900);
         default:
             return undefined;
     }
@@ -602,14 +600,7 @@ export function buildContextSnapshot({ context = {}, tierPolicy }) {
         mode: thick ? 'thick' : 'thin',
         deltaOnly,
         triggerReason: context?.triggerReason || null,
-        identity: {
-            userId: context?.identity?.userId || null,
-            tier: context?.identity?.tier || null,
-        },
-        billing: {
-            plan: context?.billingState?.plan || null,
-            requestCount: Number(context?.usageCounters?.requestCount || 0),
-        },
+        capabilities: truncateToCharBudget(context?.capabilities || {}, 400),
         bot: normalizeBotState(context?.bot || {}),
         taskState: truncateToCharBudget(context?.taskState || {}, deltaOnly ? 350 : 1200),
         inventorySummary: inventoryLimit > 0
@@ -626,6 +617,18 @@ export function buildContextSnapshot({ context = {}, tierPolicy }) {
             : (Array.isArray(context?.ragSnippets) ? context.ragSnippets.slice(0, thick ? 6 : 3) : []),
         worldMemo: context?.worldMemo || null,
         delta: context?.delta || null,
+        decision: truncateToCharBudget({
+            terrainProfile: context?.terrainProfile || null,
+            anchorCandidates: Array.isArray(context?.anchorCandidates)
+                ? context.anchorCandidates.slice(0, thick ? 8 : 4)
+                : [],
+            hazards: context?.hazards || null,
+            reachability: context?.reachability || null,
+            failureDigest: Array.isArray(context?.failureDigest)
+                ? context.failureDigest.slice(-8)
+                : [],
+            pathfinderDiagnostics: thick ? (context?.pathfinderDiagnostics || null) : null,
+        }, thick ? 3600 : 1800),
     };
 
     return truncateToCharBudget(snapshot, maxContextChars);

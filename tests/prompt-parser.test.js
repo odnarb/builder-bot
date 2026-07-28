@@ -61,7 +61,7 @@ test('parsePrompt supports rectangular cuboids', () => {
   assert.ok(structure.every(block => block.block === 'dirt'));
 });
 
-test('parsePrompt supports simple roads, fences, tunnels, arches, roofs, farms, gardens, and rooms', () => {
+test('parsePrompt supports simple roads, fences, tunnels, arches, roofs, and rooms', () => {
   const road = parsePrompt('6 long 2 wide road');
   assert.equal(road.length, 12);
   assert.ok(road.every(block => block.block === 'stone_bricks'));
@@ -81,17 +81,6 @@ test('parsePrompt supports simple roads, fences, tunnels, arches, roofs, farms, 
   const roof = parsePrompt('5 by 4 wooden roof');
   assert.equal(roof.length > 0, true);
   assert.ok(roof.every(block => block.block === 'oak_planks'));
-
-  const farm = parsePrompt('5 by 5 farm');
-  assert.equal(farm.length, 25);
-  assert.ok(farm.some(block => block.block === 'farmland'));
-  assert.ok(farm.some(block => block.block === 'water'));
-
-  const garden = parsePrompt('5 by 5 garden');
-  assert.equal(garden.length, 25);
-  assert.ok(garden.some(block => block.block === 'grass_block'));
-  assert.ok(garden.some(block => block.block === 'water'));
-  assert.ok(garden.some(block => block.block === 'oak_planks'));
 
   const room = parsePrompt('4 by 4 quartz room');
   assert.equal(room.length, 28);
@@ -136,4 +125,19 @@ test('parsePrompt loads medium house template correctly from any working directo
 
 test('parsePrompt returns an empty array for unknown prompts', () => {
   assert.deepEqual(parsePrompt('make something impossible to match'), []);
+});
+
+test('parsePrompt falls back for ambiguous styles, unsupported materials, and fluid templates', () => {
+  assert.deepEqual(parsePrompt('build an ornate stone tower'), []);
+  assert.deepEqual(parsePrompt('build an obsidian cube'), []);
+  assert.deepEqual(parsePrompt('build a cube made of obsidian'), []);
+  assert.deepEqual(parsePrompt('build a 5 by 5 farm'), []);
+  assert.deepEqual(parsePrompt('build a garden'), []);
+});
+
+test('parsePrompt rejects oversized dimensions instead of silently clamping', () => {
+  assert.throws(
+    () => parsePrompt('build a 40 by 2 stone wall'),
+    /between 1 and 32 blocks/,
+  );
 });

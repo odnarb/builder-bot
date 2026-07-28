@@ -11,6 +11,7 @@ test('resolveDecisionTierPolicy returns bounded free-tier budgets', () => {
   assert.equal(policy.maxAnchorCandidates >= 1, true);
   assert.equal(policy.maxPrepEdits <= 50, true);
   assert.equal(policy.maxPrepVolume <= 4000, true);
+  assert.equal(policy.maxLocalRetries, 1);
   assert.equal(policy.pathfinderTickTimeoutMs <= 50, true);
 });
 

@@ -111,7 +111,7 @@ function estimatePrepVolume(action) {
  *     prepActionCount: number,
  *     prepVolume: number,
  *   },
- *   errors: Array<{ code: string, message: string, actionIndex?: number, block?: string }>,
+ *   errors: Array<{ code: string, message: string, actionIndex?: number, block?: string, field?: string }>,
  *   warnings: Array<{ code: string, message: string }>,
  *   audits: Array<{ type: string, severity: string, message: string, context: Record<string, unknown> }>,
  * }}
@@ -179,36 +179,44 @@ export function validateInstructionPlan({ planPayload, tier, tierFeaturePolicy }
         .map((action, actionIndex) => ({ action, actionIndex }))
         .filter(({ action }) => action.type === 'place_block');
 
-    for (const { action, actionIndex } of placementActions) {
-        const block = String(action.block || '').toLowerCase();
-        if (ALWAYS_BLOCKED_BLOCKS.has(block)) {
-            errors.push({
-                code: 'blocked_block_type',
-                message: `Block "${block}" is not allowed.`,
-                actionIndex,
-                block,
-            });
-            audits.push({
-                type: 'blocked_block',
-                severity: 'warning',
-                message: `Blocked illegal block type "${block}" for tier ${tier}.`,
-                context: { tier, block, actionIndex },
-            });
-        }
+    for (const [actionIndex, action] of normalizedPlan.actions.entries()) {
+        const blockFields = action.type === 'place_block'
+            ? [['block', action.block]]
+            : (action.type === 'flatten_area' ? [['fillBlock', action.fillBlock]] : []);
 
-        if (isCommandBlock(block) && !allowCommandBlocks) {
-            errors.push({
-                code: 'command_block_not_allowed',
-                message: `Tier "${tier}" cannot place command blocks.`,
-                actionIndex,
-                block,
-            });
-            audits.push({
-                type: 'command_block_denied',
-                severity: 'warning',
-                message: `Rejected command block placement for tier ${tier}.`,
-                context: { tier, block, actionIndex },
-            });
+        for (const [field, rawBlock] of blockFields) {
+            const block = String(rawBlock || '').toLowerCase();
+            if (ALWAYS_BLOCKED_BLOCKS.has(block)) {
+                errors.push({
+                    code: 'blocked_block_type',
+                    message: `Block "${block}" is not allowed.`,
+                    actionIndex,
+                    block,
+                    field,
+                });
+                audits.push({
+                    type: 'blocked_block',
+                    severity: 'warning',
+                    message: `Blocked illegal block type "${block}" for tier ${tier}.`,
+                    context: { tier, block, field, actionIndex },
+                });
+            }
+
+            if (isCommandBlock(block) && !allowCommandBlocks) {
+                errors.push({
+                    code: 'command_block_not_allowed',
+                    message: `Tier "${tier}" cannot use command blocks.`,
+                    actionIndex,
+                    block,
+                    field,
+                });
+                audits.push({
+                    type: 'command_block_denied',
+                    severity: 'warning',
+                    message: `Rejected command block use for tier ${tier}.`,
+                    context: { tier, block, field, actionIndex },
+                });
+            }
         }
     }
 

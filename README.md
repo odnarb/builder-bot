@@ -99,6 +99,43 @@ npm --prefix apps/webui run dev
 Local mode uses a default local user for API identity.
 The Web UI also defaults to local mode and skips Auth0.
 
+## Run With The Firestore Emulator
+The Firestore emulator can be used for local Firestore-backed persistence without cloud credentials.
+
+Requirements:
+
+- Firebase CLI
+- Java 21+ for current Firebase emulator tooling
+
+Start the emulator:
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+
+firebase emulators:start --only firestore --project demo-builderbot-local
+```
+
+Use these exports in any terminal that should connect to the emulator:
+
+```bash
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+export GOOGLE_CLOUD_PROJECT=demo-builderbot-local
+export PRE_SCALE_PERSISTENCE_MODE=firestore
+```
+
+Then start the API:
+
+```bash
+npm run dev:local-stack -- api
+```
+
+The emulator UI is available at:
+
+```txt
+http://127.0.0.1:4000/firestore
+```
+
 To test hosted Auth0 login from the Web UI, set:
 
 ```bash

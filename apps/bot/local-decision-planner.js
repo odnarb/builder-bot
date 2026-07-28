@@ -37,11 +37,30 @@ function getBounds(blocks) {
   };
 }
 
-function chooseAnchor({ bot, decisionPolicy, worldContext = null, anchorIndex = 0 }) {
+/**
+ * Choose a safe anchor from footprint-aware world observations.
+ * @param {{
+ *   bot: any,
+ *   decisionPolicy: Record<string, unknown>,
+ *   footprint: { minX: number, maxX: number, minZ: number, maxZ: number, height: number },
+ *   worldContext?: Record<string, unknown> | null,
+ *   anchorIndex?: number,
+ * }} params
+ * @returns {Record<string, unknown>}
+ * @throws {Error} When no safe candidate exists.
+ */
+function chooseAnchor({
+  bot,
+  decisionPolicy,
+  footprint,
+  worldContext = null,
+  anchorIndex = 0,
+}) {
   const context = worldContext || buildDecisionWorldContext({
     bot,
     prompt: '',
     decisionPolicy,
+    footprint,
   });
   const candidates = Array.isArray(context?.anchorCandidates)
     ? context.anchorCandidates
@@ -55,17 +74,13 @@ function chooseAnchor({ bot, decisionPolicy, worldContext = null, anchorIndex = 
       z: finiteInt(candidate.z),
       source: 'world_context_anchor',
       score: Number(candidate.score || 0),
+      feasibility: candidate.feasibility || null,
     };
   }
 
-  const origin = getBotOrigin(bot);
-  return {
-    x: origin.x,
-    y: origin.y,
-    z: origin.z,
-    source: 'bot_position',
-    score: 0,
-  };
+  const error = new Error('No safe build site was found within the configured scan area.');
+  error.code = 'ERR_NO_SAFE_ANCHOR';
+  throw error;
 }
 
 function toRelativeFromAnchor({ block, anchor, buildOrigin, buildStartOffset }) {
@@ -77,6 +92,17 @@ function toRelativeFromAnchor({ block, anchor, buildOrigin, buildStartOffset }) 
   };
 }
 
+/**
+ * Compile a relative structure into bounded prep and placement actions.
+ * @param {{
+ *   structure: Array<Record<string, unknown>>,
+ *   anchor: Record<string, unknown>,
+ *   buildOrigin: Record<string, unknown>,
+ *   buildStartOffset: Record<string, unknown>,
+ *   decisionPolicy: Record<string, unknown>,
+ * }} params
+ * @returns {Array<Record<string, unknown>>}
+ */
 function compileActions({ structure, anchor, buildOrigin, buildStartOffset, decisionPolicy }) {
   const placements = structure.map((block) => toRelativeFromAnchor({
     block,
@@ -98,23 +124,29 @@ function compileActions({ structure, anchor, buildOrigin, buildStartOffset, deci
       z: bounds.minZ,
       radius: 3,
     },
-    {
+  ];
+  const feasibility = anchor?.feasibility;
+  const needsSupportPrep = !feasibility || Number(feasibility.supportRatio) < 1;
+  const needsClearPrep = !feasibility || Number(feasibility.obstructedRatio) > 0;
+
+  if (needsSupportPrep) {
+    steps.push({
       type: 'flatten_area',
       x: bounds.minX,
-      y: bounds.minY,
+      y: bounds.minY - 1,
       z: bounds.minZ,
       width: bounds.width,
       length: bounds.length,
-      targetY: bounds.minY,
+      targetY: bounds.minY - 1,
       fillBlock: 'minecraft:dirt',
-    },
-  ];
+    });
+  }
 
-  if (clearVolume <= maxPrepVolume) {
+  if (needsClearPrep && clearVolume <= maxPrepVolume) {
     steps.push({
       type: 'clear_volume',
       x: bounds.minX,
-      y: bounds.minY + 1,
+      y: bounds.minY,
       z: bounds.minZ,
       width: bounds.width,
       height: clearHeight,
@@ -133,6 +165,28 @@ function compileActions({ structure, anchor, buildOrigin, buildStartOffset, deci
   ];
 }
 
+/**
+ * Compile a high-confidence prompt into one relative, site-aware build plan.
+ * @param {{
+ *   prompt?: string,
+ *   bot?: any,
+ *   decisionPolicy?: Record<string, unknown>,
+ *   buildOrigin?: Record<string, unknown>,
+ *   buildStartOffset?: Record<string, unknown>,
+ *   worldContext?: Record<string, unknown> | null,
+ *   anchorIndex?: number,
+ * }} [params]
+ * @returns {{
+ *   steps: Array<Record<string, unknown>>,
+ *   tags: string[],
+ *   actionCount: number,
+ *   source: string,
+ *   anchor: Record<string, unknown>,
+ *   placementCount: number,
+ * } | null}
+ * @throws {RangeError} When requested dimensions exceed local planner limits.
+ * @throws {Error} When no safe anchor is available.
+ */
 export function createLocalBuildPlan({
   prompt,
   bot,
@@ -148,9 +202,17 @@ export function createLocalBuildPlan({
   }
 
   const safeBuildOrigin = buildOrigin || getBotOrigin(bot);
+  const structureBounds = getBounds(structure);
   const anchor = chooseAnchor({
     bot,
     decisionPolicy,
+    footprint: {
+      minX: structureBounds.minX,
+      maxX: structureBounds.maxX,
+      minZ: structureBounds.minZ,
+      maxZ: structureBounds.maxZ,
+      height: structureBounds.height,
+    },
     worldContext,
     anchorIndex,
   });

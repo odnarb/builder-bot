@@ -121,6 +121,14 @@ async function runRouteHandlers(handlers, req, res) {
   await next();
 }
 
+test('Stripe routes are omitted when billing has no provider', () => {
+  const app = createMockApp();
+
+  registerStripeRoutes(app, createDeps({ stripe: null }));
+
+  assert.equal(app.routes.size, 0);
+});
+
 test('POST /stripe/confirm-checkout rejects session ownership mismatch', async () => {
   const app = createMockApp();
   let updateCalls = 0;

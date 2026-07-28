@@ -9,15 +9,36 @@ const MAX_FAILURE_HISTORY = 24;
 
 const HAZARD_NAME_FRAGMENTS = Object.freeze([
   'lava',
+  'water',
   'fire',
   'cactus',
   'magma',
   'campfire',
 ]);
 
+const PROTECTED_BLOCK_FRAGMENTS = Object.freeze([
+  'barrel',
+  'chest',
+  'dispenser',
+  'dropper',
+  'furnace',
+  'hopper',
+  'shulker_box',
+]);
+
 function isHazardName(name) {
   const lower = String(name || '').toLowerCase();
   return HAZARD_NAME_FRAGMENTS.some(fragment => lower.includes(fragment));
+}
+
+/**
+ * Return whether a block is known to contain or control player-owned content.
+ * @param {string} name
+ * @returns {boolean}
+ */
+function isProtectedBlockName(name) {
+  const lower = String(name || '').toLowerCase();
+  return PROTECTED_BLOCK_FRAGMENTS.some((fragment) => lower.includes(fragment));
 }
 
 function safeBlockAt(bot, pos) {
@@ -239,20 +260,52 @@ function summarizeTerrainProfile(bot, origin, radius) {
   };
 }
 
-function evaluateCandidateFeasibility(bot, candidate, halfSize = 2) {
+/**
+ * Evaluate the actual planned footprint at a candidate anchor.
+ * @param {any} bot
+ * @param {{ x: number, y: number, z: number }} candidate
+ * @param {{
+ *   minX?: number,
+ *   maxX?: number,
+ *   minZ?: number,
+ *   maxZ?: number,
+ *   height?: number,
+ * }} [footprint]
+ * @returns {{
+ *   supportRatio: number,
+ *   obstructedRatio: number,
+ *   hazardRatio: number,
+ *   loadedRatio: number,
+ *   loadedCells: number,
+ *   unloadedCells: number,
+ *   protectedCells: number,
+ *   entityCount: number,
+ * }}
+ */
+function evaluateCandidateFeasibility(bot, candidate, footprint = {}) {
+  const minX = Math.max(-32, Math.trunc(Number(footprint.minX) || 0));
+  const maxX = Math.min(32, Math.trunc(Number(footprint.maxX) || 0));
+  const minZ = Math.max(-32, Math.trunc(Number(footprint.minZ) || 0));
+  const maxZ = Math.min(32, Math.trunc(Number(footprint.maxZ) || 0));
+  const height = Math.max(1, Math.min(32, Math.trunc(Number(footprint.height) || 2)));
   let loadedCells = 0;
+  let unloadedCells = 0;
   let supportCells = 0;
   let obstructedCells = 0;
   let hazardCells = 0;
+  let protectedCells = 0;
 
-  for (let dx = -halfSize; dx <= halfSize; dx += 1) {
-    for (let dz = -halfSize; dz <= halfSize; dz += 1) {
+  for (let dx = minX; dx <= maxX; dx += 1) {
+    for (let dz = minZ; dz <= maxZ; dz += 1) {
       const x = candidate.x + dx;
       const z = candidate.z + dz;
-      const at = safeBlockAt(bot, new Vec3(x, candidate.y, z));
-      const above = safeBlockAt(bot, new Vec3(x, candidate.y + 1, z));
       const below = safeBlockAt(bot, new Vec3(x, candidate.y - 1, z));
-      if (!at || !above || !below) {
+      const column = [];
+      for (let dy = 0; dy < height; dy += 1) {
+        column.push(safeBlockAt(bot, new Vec3(x, candidate.y + dy, z)));
+      }
+      if (!below || column.some((block) => !block)) {
+        unloadedCells += 1;
         continue;
       }
 
@@ -260,21 +313,40 @@ function evaluateCandidateFeasibility(bot, candidate, halfSize = 2) {
       if (below.name !== 'air' && !isHazardName(below.name)) {
         supportCells += 1;
       }
-      if (at.name !== 'air' || above.name !== 'air') {
+      if (column.some((block) => block.name !== 'air')) {
         obstructedCells += 1;
       }
-      if (isHazardName(at.name) || isHazardName(above.name) || isHazardName(below.name)) {
+      if (column.some((block) => isHazardName(block.name)) || isHazardName(below.name)) {
         hazardCells += 1;
+      }
+      if (column.some((block) => isProtectedBlockName(block.name)) || isProtectedBlockName(below.name)) {
+        protectedCells += 1;
       }
     }
   }
 
-  if (loadedCells === 0) {
+  const totalCells = loadedCells + unloadedCells;
+  const entityCount = Object.values(bot?.entities || {}).filter((entity) => {
+    const position = entity?.position;
+    return position &&
+      position.x >= candidate.x + minX &&
+      position.x <= candidate.x + maxX + 1 &&
+      position.z >= candidate.z + minZ &&
+      position.z <= candidate.z + maxZ + 1 &&
+      position.y >= candidate.y - 1 &&
+      position.y <= candidate.y + height;
+  }).length;
+
+  if (loadedCells === 0 || totalCells === 0) {
     return {
       supportRatio: 0,
       obstructedRatio: 1,
       hazardRatio: 1,
+      loadedRatio: 0,
       loadedCells: 0,
+      unloadedCells,
+      protectedCells,
+      entityCount,
     };
   }
 
@@ -282,7 +354,11 @@ function evaluateCandidateFeasibility(bot, candidate, halfSize = 2) {
     supportRatio: Number((supportCells / loadedCells).toFixed(4)),
     obstructedRatio: Number((obstructedCells / loadedCells).toFixed(4)),
     hazardRatio: Number((hazardCells / loadedCells).toFixed(4)),
+    loadedRatio: Number((loadedCells / totalCells).toFixed(4)),
     loadedCells,
+    unloadedCells,
+    protectedCells,
+    entityCount,
   };
 }
 
@@ -339,11 +415,24 @@ function buildAnchorOffsets(radius) {
   ];
 }
 
+/**
+ * Score a candidate using terrain safety and bounded path evidence.
+ * @param {{
+ *   originY: number,
+ *   candidateY: number,
+ *   feasibility: Record<string, number>,
+ *   pathProbe: Record<string, unknown>,
+ * }} params
+ * @returns {number}
+ */
 function computeAnchorScore({ originY, candidateY, feasibility, pathProbe }) {
   let score = 100;
   score -= Math.abs(candidateY - originY) * 4;
   score -= Math.round(feasibility.obstructedRatio * 30);
   score -= Math.round(feasibility.hazardRatio * 45);
+  score -= Math.round((1 - feasibility.loadedRatio) * 60);
+  score -= feasibility.protectedCells > 0 ? 100 : 0;
+  score -= feasibility.entityCount > 0 ? 40 : 0;
   score += Math.round(feasibility.supportRatio * 20);
 
   if (pathProbe.status === 'success') {
@@ -411,11 +500,18 @@ function summarizeReachability(candidates = []) {
  *     maxScanRadius: number,
  *     maxAnchorCandidates: number,
  *     pathProbeTimeoutMs: number,
+ *     minAnchorScore?: number,
  *   },
+ *   footprint?: { minX?: number, maxX?: number, minZ?: number, maxZ?: number, height?: number },
  * }} params
  * @returns {Record<string, unknown>}
  */
-export function buildDecisionWorldContext({ bot, prompt = '', decisionPolicy }) {
+export function buildDecisionWorldContext({
+  bot,
+  prompt = '',
+  decisionPolicy,
+  footprint = {},
+}) {
   ensurePathfinderTelemetry(bot);
 
   const entityPos = bot?.entity?.position;
@@ -425,6 +521,7 @@ export function buildDecisionWorldContext({ bot, prompt = '', decisionPolicy }) 
   const radius = Math.max(4, Math.min(32, Number(decisionPolicy?.maxScanRadius || 8)));
   const maxAnchorCandidates = Math.max(1, Math.min(12, Number(decisionPolicy?.maxAnchorCandidates || 3)));
   const pathProbeTimeoutMs = Math.max(200, Math.min(4000, Number(decisionPolicy?.pathProbeTimeoutMs || 800)));
+  const minAnchorScore = Math.max(0, Math.min(100, Number(decisionPolicy?.minAnchorScore || 45)));
 
   const terrainProfile = summarizeTerrainProfile(bot, origin, radius);
   const candidates = [];
@@ -450,8 +547,8 @@ export function buildDecisionWorldContext({ bot, prompt = '', decisionPolicy }) 
       z,
       surfaceBlock: surface.blockName,
     };
-    const feasibility = evaluateCandidateFeasibility(bot, candidate, 2);
-    const pathProbe = probeCandidatePath(bot, candidate, pathProbeTimeoutMs);
+    const feasibility = evaluateCandidateFeasibility(bot, candidate, footprint);
+    const pathProbe = { status: 'unknown', timeMs: 0, cost: 0, visitedNodes: 0, pathLength: 0 };
     const score = computeAnchorScore({
       originY: origin.y,
       candidateY: candidate.y,
@@ -470,7 +567,31 @@ export function buildDecisionWorldContext({ bot, prompt = '', decisionPolicy }) 
   candidates.sort((a, b) => b.score - a.score);
   const anchorCandidates = candidates
     .slice(0, maxAnchorCandidates)
-    .map(candidate => ({
+    .map((candidate) => {
+      const pathProbe = probeCandidatePath(bot, candidate, pathProbeTimeoutMs);
+      return {
+        ...candidate,
+        pathProbe,
+        score: computeAnchorScore({
+          originY: origin.y,
+          candidateY: candidate.y,
+          feasibility: candidate.feasibility,
+          pathProbe,
+        }),
+      };
+    })
+    .filter((candidate) => (
+      candidate.score >= minAnchorScore &&
+      candidate.feasibility.loadedRatio === 1 &&
+      candidate.feasibility.hazardRatio === 0 &&
+      candidate.feasibility.protectedCells === 0 &&
+      candidate.feasibility.entityCount === 0 &&
+      candidate.pathProbe.status !== 'noPath' &&
+      candidate.pathProbe.status !== 'timeout' &&
+      candidate.pathProbe.status !== 'error'
+    ))
+    .sort((a, b) => b.score - a.score)
+    .map((candidate) => ({
       x: candidate.x,
       y: candidate.y,
       z: candidate.z,

@@ -239,11 +239,27 @@ export function createAiGetStructureHandler(deps) {
         }
 
         const {
+            identity: _callerIdentity,
+            billingState: _callerBillingState,
+            decisionPolicy: _callerDecisionPolicy,
+            usageCounters: _callerUsageCounters,
+            ...observationalContext
+        } = context && typeof context === 'object' ? context : {};
+        const safeContext = {
+            ...observationalContext,
+            capabilities: {
+                tier,
+                allowCommandBlocks: tierFeaturePolicy.allowCommandBlocks === true,
+                maxBlocksPerBuild: tierFeaturePolicy.maxBlocksPerBuild,
+                maxBuildVolume: tierFeaturePolicy.maxBuildVolume,
+            },
+        };
+        const {
             contextForSnapshot,
             diagnostics: contextDiagnostics,
         } = prepareContextForSnapshot({
             usageKey: resolvedUsageKey,
-            context,
+            context: safeContext,
             forceThinSnapshot: shouldForceThinSnapshots({ guardState: emergencyGuardState }),
         });
         const contextSnapshot = buildContextSnapshot({
@@ -392,10 +408,10 @@ Generate ONLY raw JSON in this shape:
 {
   "actions": [
     { "type": "prepare_site", "label": "foundation" },
-    { "type": "flatten_area", "x": 0, "y": 64, "z": 0, "width": 8, "length": 8, "targetY": 64, "fillBlock": "minecraft:dirt" },
-    { "type": "clear_volume", "x": 0, "y": 65, "z": 0, "width": 8, "height": 4, "length": 8 },
-    { "type": "ensure_access", "x": 0, "y": 64, "z": 0, "radius": 2 },
-    { "type": "move_to", "x": 0, "y": 64, "z": 0 },
+    { "type": "flatten_area", "x": 0, "y": 0, "z": 0, "width": 8, "length": 8, "targetY": 0, "fillBlock": "minecraft:dirt" },
+    { "type": "clear_volume", "x": 0, "y": 1, "z": 0, "width": 8, "height": 4, "length": 8 },
+    { "type": "ensure_access", "x": 0, "y": 0, "z": 0, "radius": 2 },
+    { "type": "move_to", "x": 0, "y": 0, "z": 0 },
     { "type": "place_block", "x": 0, "y": 0, "z": 0, "block": "minecraft:oak_planks" }
   ],
   "tags": ["house", "wood"]

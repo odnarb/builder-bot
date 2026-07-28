@@ -74,3 +74,42 @@ test('createLocalBuildPlan handles sized local templates without AI', () => {
   assert.equal(plan.placementCount, 16);
   assert.equal(plan.steps.filter((step) => step.block === 'minecraft:oak_planks').length, 16);
 });
+
+test('createLocalBuildPlan skips redundant terrain prep for a clear supported footprint', () => {
+  const plan = createLocalBuildPlan({
+    prompt: 'stone floor',
+    bot: createBot(),
+    decisionPolicy,
+    buildOrigin,
+    buildStartOffset,
+    worldContext: {
+      anchorCandidates: [{
+        x: 4,
+        y: 64,
+        z: 4,
+        score: 100,
+        feasibility: {
+          supportRatio: 1,
+          obstructedRatio: 0,
+        },
+      }],
+    },
+  });
+
+  assert.equal(plan.steps.some((step) => step.type === 'flatten_area'), false);
+  assert.equal(plan.steps.some((step) => step.type === 'clear_volume'), false);
+});
+
+test('createLocalBuildPlan refuses to mutate when no safe anchor exists', () => {
+  assert.throws(
+    () => createLocalBuildPlan({
+      prompt: 'stone floor',
+      bot: createBot(),
+      decisionPolicy,
+      buildOrigin,
+      buildStartOffset,
+      worldContext: { anchorCandidates: [] },
+    }),
+    /No safe build site/,
+  );
+});

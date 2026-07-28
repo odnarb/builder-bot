@@ -8,6 +8,22 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const mediumHouseTemplatePath = path.join(currentDir, 'medium-house-template.json')
 
 const MAX_DIMENSION = 32
+const AMBIGUOUS_STYLE_PATTERN = /\b(?:ornate|detailed|elaborate|gothic|futuristic|modern|custom|decorative|medieval|victorian)\b/
+const SHAPE_WORD_PATTERN = '(?:arch|block|box|bridge|column|cube|door|doorway|fence|floor|house|pad|path|pillar|platform|road|roof|room|staircase|stairs|steps|tower|tunnel|wall|window)'
+const NON_MATERIAL_MODIFIERS = new Set([
+  'a',
+  'an',
+  'big',
+  'hollow',
+  'large',
+  'long',
+  'medium',
+  'short',
+  'simple',
+  'small',
+  'tall',
+  'wide',
+])
 const MATERIALS = [
   ['glass pane', 'glass_pane'],
   ['glass', 'glass_pane'],
@@ -24,37 +40,77 @@ const MATERIALS = [
   ['dirt', 'dirt'],
 ]
 
-function clampDimension(value, fallback) {
+/**
+ * Parse a requested dimension without silently changing user intent.
+ * @param {unknown} value
+ * @param {number} fallback
+ * @returns {number}
+ * @throws {RangeError} When the requested dimension is outside supported bounds.
+ */
+function parseDimension(value, fallback) {
   const num = Number(value)
   if (!Number.isFinite(num)) {
     return fallback
   }
-  return Math.max(1, Math.min(MAX_DIMENSION, Math.trunc(num)))
+  const dimension = Math.trunc(num)
+  if (dimension < 1 || dimension > MAX_DIMENSION) {
+    throw new RangeError(`Build dimensions must be between 1 and ${MAX_DIMENSION} blocks.`)
+  }
+  return dimension
 }
 
-function resolveMaterial(lower, fallback = 'cobblestone') {
+/**
+ * Find a supported material mentioned in text.
+ * @param {string} lower
+ * @returns {string | null}
+ */
+function findMaterial(lower) {
   const match = MATERIALS.find(([word]) => lower.includes(word))
-  return match ? match[1] : fallback
+  return match ? match[1] : null
 }
 
+/**
+ * Resolve a supported material or use the template default.
+ * @param {string} lower
+ * @param {string} fallback
+ * @returns {string}
+ */
+function resolveMaterial(lower, fallback = 'cobblestone') {
+  return findMaterial(lower) || fallback
+}
+
+/**
+ * Parse compact dimensions such as `4x6x3`.
+ * @param {string} lower Lower-cased prompt.
+ * @returns {Array<number | null>}
+ * @throws {RangeError} When a requested dimension is unsupported.
+ */
 function parseDimensions(lower) {
   const explicit = lower.match(/(\d+)\s*(?:x|by)\s*(\d+)(?:\s*(?:x|by)\s*(\d+))?/)
   if (explicit) {
     return [
-      clampDimension(explicit[1], 1),
-      clampDimension(explicit[2], 1),
-      explicit[3] ? clampDimension(explicit[3], 1) : null,
+      parseDimension(explicit[1], 1),
+      parseDimension(explicit[2], 1),
+      explicit[3] ? parseDimension(explicit[3], 1) : null,
     ]
   }
 
   const firstNumber = lower.match(/\b(\d+)\b/)
-  return firstNumber ? [clampDimension(firstNumber[1], 1)] : []
+  return firstNumber ? [parseDimension(firstNumber[1], 1)] : []
 }
 
+/**
+ * Parse a named dimension such as `4 blocks wide`.
+ * @param {string} lower Lower-cased prompt.
+ * @param {string} words Alternation used for supported measure names.
+ * @param {number} fallback Default dimension.
+ * @returns {number}
+ * @throws {RangeError} When a requested dimension is unsupported.
+ */
 function parseMeasure(lower, words, fallback) {
   const pattern = new RegExp(`\\b(\\d+)\\s*(?:block\\s*)?(?:${words})\\b`)
   const match = lower.match(pattern)
-  return match ? clampDimension(match[1], fallback) : fallback
+  return match ? parseDimension(match[1], fallback) : fallback
 }
 
 function cuboid(width, height, length, block) {
@@ -223,33 +279,6 @@ function simpleRoof(width, length, block) {
   return structure
 }
 
-function simpleFarm(width, length) {
-  const structure = []
-  for (let x = 0; x < width; x++) {
-    for (let z = 0; z < length; z++) {
-      const isBorder = x === 0 || z === 0 || x === width - 1 || z === length - 1
-      const block = isBorder ? 'oak_planks' : (x % 2 === 0 ? 'farmland' : 'water')
-      structure.push({ x, y: 0, z, block })
-    }
-  }
-  return structure
-}
-
-function simpleGarden(width, length) {
-  const structure = []
-  const centerX = Math.floor(width / 2)
-  const centerZ = Math.floor(length / 2)
-  for (let x = 0; x < width; x++) {
-    for (let z = 0; z < length; z++) {
-      const isBorder = x === 0 || z === 0 || x === width - 1 || z === length - 1
-      const isCenter = x === centerX && z === centerZ
-      const block = isBorder ? 'oak_planks' : (isCenter ? 'water' : 'grass_block')
-      structure.push({ x, y: 0, z, block })
-    }
-  }
-  return structure
-}
-
 function simpleRoom(width, length, block) {
   const structure = rectangle(width, length, block)
   for (let x = 0; x < width; x++) {
@@ -263,8 +292,34 @@ function simpleRoom(width, length, block) {
   return structure
 }
 
+/**
+ * Parse only deterministic, supported build prompts.
+ * @param {string} prompt User build prompt.
+ * @returns {Array<{ x: number, y: number, z: number, block: string }>}
+ * @throws {RangeError} When explicit dimensions exceed supported bounds.
+ */
 export function parsePrompt(prompt) {
   const lower = String(prompt || '').toLowerCase()
+  if (AMBIGUOUS_STYLE_PATTERN.test(lower)) {
+    return []
+  }
+
+  const explicitMaterialPhrase = lower.match(new RegExp(
+    `\\b(?:made\\s+(?:from|of)|using)\\s+([a-z_ ]{1,32}?)(?:\\s+${SHAPE_WORD_PATTERN}\\b|$)`,
+  ))
+  if (explicitMaterialPhrase && !findMaterial(explicitMaterialPhrase[1])) {
+    return []
+  }
+
+  const leadingMaterial = lower.match(new RegExp(`\\b([a-z_]+)\\s+${SHAPE_WORD_PATTERN}\\b`))
+  if (
+    leadingMaterial &&
+    !NON_MATERIAL_MODIFIERS.has(leadingMaterial[1]) &&
+    !findMaterial(lower)
+  ) {
+    return []
+  }
+
   const dimensions = parseDimensions(lower)
   const material = resolveMaterial(lower)
 
@@ -299,15 +354,11 @@ export function parsePrompt(prompt) {
   }
 
   if (lower.includes('farm')) {
-    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 7)
-    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
-    return simpleFarm(width, length)
+    return []
   }
 
   if (lower.includes('garden')) {
-    const width = parseMeasure(lower, 'wide|width', dimensions[0] || 7)
-    const length = parseMeasure(lower, 'long|length', dimensions[1] || width)
-    return simpleGarden(width, length)
+    return []
   }
 
   if (lower.includes('fence')) {

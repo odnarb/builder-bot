@@ -24,9 +24,11 @@ function isSessionPaidAndComplete(session) {
 }
 
 /**
- * Register Stripe checkout and confirmation routes.
+ * Register Stripe checkout and confirmation routes when a Stripe client is available.
  * @param {import('express').Express} app
  * @param {Record<string, any>} deps
+ * @returns {void}
+ * @throws {Error} When rate-limit configuration is invalid.
  */
 export function registerStripeRoutes(app, deps) {
     const {
@@ -47,6 +49,11 @@ export function registerStripeRoutes(app, deps) {
         claimCheckoutConfirmationSession,
         logger,
     } = deps;
+
+    if (!stripe) {
+        return;
+    }
+
     const fallbackProcessedCheckoutSessions = new Set();
     const claimCheckoutSession = typeof claimCheckoutConfirmationSession === 'function'
         ? claimCheckoutConfirmationSession

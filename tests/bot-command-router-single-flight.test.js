@@ -98,6 +98,8 @@ test('handlePlayerCommand uses local planner for known build prompts without AI 
   const fetchUrls = [];
   const chats = [];
   const originalFetch = global.fetch;
+  const world = new Map();
+  const keyOf = (x, y, z) => `${x},${y},${z}`;
 
   global.fetch = async (url, options = {}) => {
     fetchUrls.push(String(url));
@@ -159,14 +161,25 @@ test('handlePlayerCommand uses local planner for known build prompts without AI 
     items: () => [{ name: 'dirt' }, { name: 'oak_planks' }],
   };
   bot.blockAt = (pos) => ({
-    name: pos.y <= 63 ? 'dirt' : 'air',
+    name: world.get(keyOf(pos.x, pos.y, pos.z)) || (pos.y <= 63 ? 'dirt' : 'air'),
     position: { x: pos.x, y: pos.y, z: pos.z },
   });
   bot.canDigBlock = () => true;
-  bot.dig = async () => { };
+  bot.dig = async (block) => {
+    world.set(keyOf(block.position.x, block.position.y, block.position.z), 'air');
+  };
   bot.equip = async () => { };
   bot.lookAt = async () => { };
-  bot.placeBlock = async () => { };
+  bot.placeBlock = async (below, face) => {
+    world.set(
+      keyOf(
+        below.position.x + face.x,
+        below.position.y + face.y,
+        below.position.z + face.z,
+      ),
+      'oak_planks',
+    );
+  };
   bot.waitForTicks = async () => { };
 
   try {

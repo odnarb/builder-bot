@@ -46,6 +46,60 @@ test('validateInstructionPlan rejects command blocks for non-pro tiers and write
     assert.equal(result.audits.some((event) => event.type === 'command_block_denied'), true);
 });
 
+test('validateInstructionPlan applies blocked-block policy to flatten fill blocks', () => {
+    const commandBlockResult = validateInstructionPlan({
+        planPayload: {
+            actions: [
+                {
+                    type: 'flatten_area',
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    width: 2,
+                    length: 2,
+                    fillBlock: 'command_block',
+                },
+            ],
+        },
+        tier: 'free',
+        tierFeaturePolicy: {
+            maxBlocksPerBuild: 50,
+            maxBuildVolume: 5000,
+            allowCommandBlocks: false,
+        },
+    });
+    const blockedResult = validateInstructionPlan({
+        planPayload: {
+            actions: [
+                {
+                    type: 'flatten_area',
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    width: 2,
+                    length: 2,
+                    fillBlock: 'barrier',
+                },
+            ],
+        },
+        tier: 'admin',
+        tierFeaturePolicy: {
+            maxBlocksPerBuild: 6000,
+            maxBuildVolume: 95000,
+            allowCommandBlocks: true,
+        },
+    });
+
+    assert.equal(commandBlockResult.valid, false);
+    assert.equal(commandBlockResult.errors.some((error) => (
+        error.code === 'command_block_not_allowed' && error.field === 'fillBlock'
+    )), true);
+    assert.equal(blockedResult.valid, false);
+    assert.equal(blockedResult.errors.some((error) => (
+        error.code === 'blocked_block_type' && error.field === 'fillBlock'
+    )), true);
+});
+
 test('validateInstructionPlan enforces block count and volume limits', () => {
     const result = validateInstructionPlan({
         planPayload: {
