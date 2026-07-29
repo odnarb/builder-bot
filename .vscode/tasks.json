@@ -3,98 +3,18 @@
   "tasks": [
     {
       "label": "local stack",
-      "type": "shell",
+      "type": "process",
       "command": "node",
       "args": [
-        "-e",
-        "console.log('BuilderBot local stack task started. Service terminals are opening or already running.')"
-      ],
-      "dependsOrder": "parallel",
-      "dependsOn": [
-        "local stack: minecraft",
-        "local stack: api",
-        "local stack: webui",
-        "local stack: bot"
+        "scripts/start-local-stack.mjs"
       ],
       "group": {
         "kind": "build",
         "isDefault": true
       },
       "presentation": {
-        "reveal": "silent",
+        "reveal": "always",
         "panel": "dedicated",
-        "clear": false
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "local stack: minecraft",
-      "type": "shell",
-      "hide": true,
-      "command": "npm",
-      "args": [
-        "run",
-        "dev:local-stack",
-        "--",
-        "minecraft"
-      ],
-      "presentation": {
-        "panel": "dedicated",
-        "group": "local-stack",
-        "clear": false
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "local stack: api",
-      "type": "shell",
-      "hide": true,
-      "command": "npm",
-      "args": [
-        "run",
-        "dev:local-stack",
-        "--",
-        "api"
-      ],
-      "presentation": {
-        "panel": "dedicated",
-        "group": "local-stack",
-        "clear": false
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "local stack: webui",
-      "type": "shell",
-      "hide": true,
-      "command": "npm",
-      "args": [
-        "run",
-        "dev:local-stack",
-        "--",
-        "webui"
-      ],
-      "presentation": {
-        "panel": "dedicated",
-        "group": "local-stack",
-        "clear": false
-      },
-      "problemMatcher": []
-    },
-    {
-      "label": "local stack: bot",
-      "type": "shell",
-      "hide": true,
-      "command": "npm",
-      "args": [
-        "run",
-        "dev:local-stack",
-        "--",
-        "bot"
-      ],
-      "presentation": {
-        "panel": "dedicated",
-        "group": "local-stack",
         "clear": false
       },
       "problemMatcher": []

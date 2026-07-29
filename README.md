@@ -40,6 +40,7 @@ docs/HOSTED-BILLING-AND-LOCAL-DB-PLAN.md
 ## Requirements
 - Node.js 22+
 - Java 17+ for a Paper Minecraft server
+- Windows Terminal and Git for Windows when using the automatic WSL launcher
 - Auth0/Stripe env values for hosted-style API flows
 - OpenAI env values when AI features are used
 - Firestore credentials only when using Firestore-backed storage
@@ -69,7 +70,19 @@ npm --prefix apps/webui install
 ## Run Locally Today
 In VS Code, press `Ctrl+Shift+B` to run the default `local stack` build task.
 
-That starts these services in separate terminals when they are not already running:
+You can launch the same task from a terminal:
+
+```bash
+npm run build
+```
+
+On Windows/WSL, the launcher opens each service in a Git Bash tab and delegates
+the service process back into the current WSL distro. This avoids PowerShell
+task-shell issues without running Windows Node against Linux dependencies.
+The checked-in VS Code workspace selects Git Bash for new Windows terminals,
+while the local-stack task runs Node directly so it cannot inherit PowerShell.
+
+The launcher starts these services in separate terminals when they are not already running:
 
 - Minecraft server
 - API

@@ -1,5 +1,13 @@
 # Agent Notes
 
+## 2026-07-29 Git Bash Local Stack
+
+- No local or remote `dev` branch exists, so this bugfix was branched from an updated `main`.
+- Windows VS Code terminals now default to the detected Git Bash profile. The local-stack task bypasses task shells, opens Windows Terminal tabs with Git Bash explicitly, and delegates each service back into the originating WSL distro.
+- Live verification opened the corrected tabs and confirmed ports `25565`, `3001`, `5173`, and `3002` were listening.
+- Automated verification: `npm test` passes 203 tests; architecture, protected-route, and secret checks pass.
+- The dependency security audit still fails on the pre-existing advisories recorded in `AGENT-ISSUES.md`.
+
 ## 2026-07-28 Decision Engine Reliability
 
 - Implemented shared validation, relative-coordinate verification, cumulative mutation accounting, terminal failure classification, conservative local parsing, footprint-aware site screening, material preflight, and bounded patch context.
